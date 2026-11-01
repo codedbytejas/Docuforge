@@ -238,9 +238,19 @@ export async function renderDocumentation(container, params) {
       </main>
     `;
 
+    function checkUnsavedChanges() {
+      if (!isEditing) return true;
+      const editor = document.getElementById('df-editor');
+      if (editor && editor.value !== (project.docs?.[currentTab] || '')) {
+        return confirm('You have unsaved changes in this documentation section. Discard changes?');
+      }
+      return true;
+    }
+
     // Tab button handlers (Sidebar & Mobile Tabs)
     container.querySelectorAll('.df-tab-btn, .df-doc-mobile-tab-btn').forEach(b => {
       b.onclick = () => {
+        if (!checkUnsavedChanges()) return;
         currentTab = b.dataset.key;
         isEditing = false;
         renderWorkspace();
@@ -252,6 +262,7 @@ export async function renderDocumentation(container, params) {
     const editBtn = document.getElementById('df-btn-edit');
     if (editBtn) {
       editBtn.onclick = () => {
+        if (isEditing && !checkUnsavedChanges()) return;
         isEditing = !isEditing;
         renderWorkspace();
       };
@@ -261,6 +272,7 @@ export async function renderDocumentation(container, params) {
     const cancelEditBtn = document.getElementById('df-btn-cancel-edit');
     if (cancelEditBtn) {
       cancelEditBtn.onclick = () => {
+        if (!checkUnsavedChanges()) return;
         isEditing = false;
         renderWorkspace();
       };
@@ -287,6 +299,7 @@ export async function renderDocumentation(container, params) {
           project = updated;
           setCurrentProject(updated);
           isEditing = false;
+          window.onbeforeunload = null;
           showToast('Changes saved successfully');
           renderWorkspace();
         } catch (e) {
