@@ -1,0 +1,130 @@
+/* ==========================================================================
+   DocuForge AI — Design Tokens & Core Theme
+   Class: Premium Developer SaaS (Linear, Vercel, Superset, Raycast)
+   Single Accent: Warm Ember (#f59e0b)
+   ========================================================================== */
+
+:root {
+  /* Surfaces - Dark (Default) */
+  --bg-canvas: #09090b;
+  --bg-surface: #111114;
+  --bg-surface-elevated: #17171c;
+  --bg-surface-hover: #1f1f26;
+  --bg-surface-active: #272730;
+  
+  /* Borders & Hairlines */
+  --border-subtle: #1c1c22;
+  --border-default: #26262e;
+  --border-strong: #363642;
+  --border-focus: #f59e0b;
+
+  /* Typography / Ink */
+  --text-primary: #f4f4f6;
+  --text-secondary: #9e9ea8;
+  --text-tertiary: #63636f;
+  --text-inverse: #09090b;
+
+  /* Single Accent: Warm Ember */
+  --accent: #f59e0b;
+  --accent-hover: #d97706;
+  --accent-light: #fbbf24;
+  --accent-dim: rgba(245, 158, 11, 0.1);
+  --accent-glow: rgba(245, 158, 11, 0.22);
+  --accent-border: rgba(245, 158, 11, 0.35);
+  --accent-ink: #09090b;
+
+  /* Status Colors */
+  --status-ok: #10b981;
+  --status-ok-dim: rgba(16, 185, 129, 0.12);
+  --status-err: #ef4444;
+  --status-err-dim: rgba(239, 68, 68, 0.12);
+  --status-warn: #f59e0b;
+
+  /* Typography Scales */
+  --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --fs-xs: 11.5px;
+  --fs-sm: 13px;
+  --fs-base: 14.5px;
+  --fs-md: 16px;
+  --fs-lg: 19px;
+  --fs-xl: 26px;
+  --fs-2xl: 36px;
+  --fs-hero: 48px;
+
+  --lh-tight: 1.15;
+  --lh-snug: 1.35;
+  --lh-base: 1.55;
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+
+  /* Radii */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-pill: 9999px;
+
+  /* Shadows */
+  --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-popover: 0 16px 36px rgba(0, 0, 0, 0.65);
+  --shadow-glow: 0 0 32px var(--accent-glow);
+
+  /* Transitions */
+  --trans-fast: 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  --trans-normal: 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Light Surface Override */
+[data-theme="light"] {
+  --bg-canvas: #fafaf9;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f4f4f2;
+  --bg-surface-hover: #ebe9e6;
+  --bg-surface-active: #e2dfdc;
+
+  --border-subtle: #eeecea;
+  --border-default: #dfdcd7;
+  --border-strong: #c2beba;
+  --border-focus: #d97706;
+
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-tertiary: #8e8e99;
+  --text-inverse: #ffffff;
+
+  --accent: #d97706;
+  --accent-hover: #b45309;
+  --accent-light: #f59e0b;
+  --accent-dim: rgba(217, 119, 6, 0.08);
+  --accent-glow: rgba(217, 119, 6, 0.16);
+  --accent-border: rgba(217, 119, 6, 0.28);
+  --accent-ink: #ffffff;
+
+  --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 4px 14px rgba(0, 0, 0, 0.06);
+  --shadow-popover: 0 16px 32px rgba(0, 0, 0, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+}
+
