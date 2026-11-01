@@ -227,9 +227,46 @@ export async function renderProcessing(container, params) {
         jobTitle.textContent = 'Analysis Failed';
       }
       if (errPanel && errText) {
-        errHeadline.textContent = 'Generation encountered an error';
-        errText.textContent = job.error || 'Gemini processing failed. Please verify API key or try again.';
+        let title = 'Generation encountered an error';
+        let detail = job.error || 'Gemini processing failed. Please verify API key or try again.';
+        let showSettings = false;
+
+        const lowErr = (job.error || '').toLowerCase();
+        if (lowErr.includes('gemini_api_key') || lowErr.includes('api key')) {
+          title = 'Gemini API Key Required';
+          detail = 'The server does not have GEMINI_API_KEY configured. Please provide your key in Settings or your server environment.';
+          showSettings = true;
+        } else if (lowErr.includes('429') || lowErr.includes('rate limit') || lowErr.includes('resource_exhausted')) {
+          title = 'Gemini Rate Limit Reached';
+          detail = 'Gemini rate limits were encountered. Please wait a brief moment and retry the generation.';
+        } else if (lowErr.includes('malformed') || lowErr.includes('unexpected structure') || lowErr.includes('empty')) {
+          title = 'Malformed AI Output';
+          detail = 'The AI model returned an unexpected response structure. Click Retry to request a clean regeneration.';
+        } else if (lowErr.includes('503') || lowErr.includes('overloaded') || lowErr.includes('network') || lowErr.includes('timeout')) {
+          title = 'Model Service Unavailable';
+          detail = 'The Gemini model is temporarily overloaded or experiencing network latency. Please retry shortly.';
+        }
+
+        errHeadline.textContent = title;
+        errText.textContent = detail;
         errPanel.style.display = 'block';
+
+        const actionsContainer = errPanel.querySelector('.df-banner > div > div:last-child');
+        if (actionsContainer) {
+          actionsContainer.innerHTML = `
+            <button type="button" class="df-btn df-btn-sm df-btn-danger" id="df-btn-retry">
+              ${icons.refresh(14)} Retry Generation
+            </button>
+            <a href="/playground" class="df-btn df-btn-sm" data-link>
+              ${icons.edit(14)} Edit Source Input
+            </a>
+            ${showSettings ? `
+              <a href="/settings" class="df-btn df-btn-sm df-btn-secondary" data-link>
+                Open Settings
+              </a>
+            ` : ''}
+          `;
+        }
 
         const retryBtn = document.getElementById('df-btn-retry');
         if (retryBtn) {
