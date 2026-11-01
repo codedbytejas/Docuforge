@@ -152,19 +152,27 @@ const OUTPUT_SCOPE_CONFIG = {
 };
 
 export async function renderPlayground(container) {
+  let draft = null;
+  if (!state.currentProject) {
+    try {
+      const raw = sessionStorage.getItem('df_playground_draft');
+      if (raw) draft = JSON.parse(raw);
+    } catch (e) {}
+  }
+
   const p = state.currentProject || {
     id: null,
-    name: '',
-    language: state.defaultLang || 'Python',
-    description: '',
-    doc_type: state.defaultDocType || 'Complete technical documentation',
+    name: draft?.name || '',
+    language: draft?.language || state.defaultLang || 'Python',
+    description: draft?.description || '',
+    doc_type: draft?.doc_type || state.defaultDocType || 'Complete technical documentation',
     code: ''
   };
 
   // Parse in-memory files from project code if present
-  let uploadedFiles = [];
-  let initialPastedCode = '';
-  let inputMode = 'upload'; // 'upload' | 'paste'
+  let uploadedFiles = draft?.uploadedFiles || [];
+  let initialPastedCode = draft?.pastedCode || '';
+  let inputMode = draft?.inputMode || (uploadedFiles.length ? 'upload' : (initialPastedCode ? 'paste' : 'upload'));
 
   if (p.code) {
     const delimRegex = /<<<DOCUFORGE:FILE_NAME="([^"]+)">>>\n([\s\S]*?)<<<DOCUFORGE:END_FILE>>>/g;
@@ -351,7 +359,24 @@ export async function renderPlayground(container) {
     btnModePaste.classList.toggle('active', mode === 'paste');
     viewUpload.style.display = mode === 'upload' ? 'block' : 'none';
     viewPaste.style.display = mode === 'paste' ? 'block' : 'none';
+    saveDraft();
     checkValid();
+  }
+
+  function saveDraft() {
+    if (state.currentProject) return;
+    const draftData = {
+      name: nameInput.value,
+      language: langSelect.value,
+      description: descInput.value,
+      doc_type: typeSelect.value,
+      inputMode: inputMode,
+      pastedCode: codeArea.value,
+      uploadedFiles: uploadedFiles
+    };
+    try {
+      sessionStorage.setItem('df_playground_draft', JSON.stringify(draftData));
+    } catch (e) {}
   }
 
   btnModeUpload.onclick = () => setInputMode('upload');
@@ -530,10 +555,17 @@ export async function renderPlayground(container) {
       runBtn.disabled = false;
       runHint.textContent = 'Ready to analyze. Click button to begin.';
     }
+
+    saveDraft();
   }
 
   nameInput.oninput = checkValid;
-  typeSelect.onchange = updateOutputScope;
+  descInput.oninput = saveDraft;
+  langSelect.onchange = saveDraft;
+  typeSelect.onchange = () => {
+    updateOutputScope();
+    saveDraft();
+  };
 
   document.getElementById('df-btn-sample').onclick = () => {
     setInputMode('paste');
@@ -547,7 +579,10 @@ export async function renderPlayground(container) {
 
   document.getElementById('df-btn-clear').onclick = () => {
     codeArea.value = '';
+    uploadedFiles = [];
+    sessionStorage.removeItem('df_playground_draft');
     updateLineNumbers();
+    renderFileList();
     checkValid();
   };
 
@@ -667,6 +702,7 @@ export async function renderPlayground(container) {
       setActiveJob(job);
 
       // 3. Navigate to processing view
+      sessionStorage.removeItem('df_playground_draft');
       navigate(`/processing?job_id=${job.id}`);
     } catch (err) {
       showToast(err.message, true);
