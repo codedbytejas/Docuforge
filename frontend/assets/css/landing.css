@@ -762,21 +762,54 @@
   box-shadow: 0 0 48px var(--accent-dim);
 }
 
+/* Section Reveals (Scroll-triggered, reduced-motion safe) */
+.df-section-reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 450ms cubic-bezier(0.16, 1, 0.3, 1), transform 450ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.df-section-revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .df-section-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
 /* Footer */
 .df-footer {
   border-top: 1px solid var(--border-subtle);
-  padding: 48px 0;
+  padding: 56px 0 36px;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   background-color: var(--bg-canvas);
 }
 
-.df-footer-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--sp-6);
+.df-footer-top {
+  display: grid;
+  grid-template-columns: 1.5fr repeat(3, 1fr);
+  gap: 32px;
+  margin-bottom: 40px;
+}
+
+@media (max-width: 900px) {
+  .df-footer-top {
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+}
+
+@media (max-width: 540px) {
+  .df-footer-top {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
 }
 
 /* Responsive Breakpoints */

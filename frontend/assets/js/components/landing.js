@@ -354,22 +354,64 @@ export function renderLandingPage(container) {
 
       <!-- 9. Footer Section -->
       <footer class="df-footer">
-        <div class="df-container df-footer-inner">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <span class="df-brand-mark">${icons.mark(16)}</span>
-            <b>DocuForge AI</b>
-            <span class="df-sub">&middot; Turns source code into structured documentation</span>
+        <div class="df-container">
+          <div class="df-footer-top" style="display: grid; grid-template-columns: 1.5fr repeat(3, 1fr); gap: 32px; margin-bottom: 40px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <span class="df-brand-mark">${icons.mark(16)}</span>
+                <b style="font-size: 16px;">DocuForge AI</b>
+              </div>
+              <p class="df-sub" style="max-width: 320px; line-height: 1.6; margin-bottom: 16px;">
+                Developer-first technical documentation synthesizer. Inspects real source code structures to generate accurate Markdown and PDF documentation.
+              </p>
+              <div class="df-badge" style="font-size: 11px;">
+                <span class="df-badge-dot" style="background-color: var(--status-ok);"></span>
+                Engine Online &middot; ${escapeHtml(currentModel)}
+              </div>
+            </div>
+
+            <div>
+              <b class="df-sub" style="font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; color: var(--text-tertiary); display: block; margin-bottom: 14px;">Product</b>
+              <div style="display: flex; flex-direction: column; gap: 10px;" class="df-sub">
+                <a href="/playground" data-link>Playground Workspace</a>
+                <a href="/projects" data-link>Saved Projects</a>
+                <a href="#how-it-works">How It Works</a>
+                <a href="#languages">Supported Languages</a>
+              </div>
+            </div>
+
+            <div>
+              <b class="df-sub" style="font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; color: var(--text-tertiary); display: block; margin-bottom: 14px;">Resources</b>
+              <div style="display: flex; flex-direction: column; gap: 10px;" class="df-sub">
+                <a href="#preview">Interactive Preview</a>
+                <a href="#features">Architecture Overview</a>
+                <a href="/settings" data-link>Environment & API Status</a>
+                <a href="#about">Privacy & Data Handling</a>
+              </div>
+            </div>
+
+            <div>
+              <b class="df-sub" style="font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; color: var(--text-tertiary); display: block; margin-bottom: 14px;">Developer Support</b>
+              <div style="display: flex; flex-direction: column; gap: 10px;" class="df-sub">
+                <a href="/docs" target="_blank" rel="noopener">FastAPI Documentation</a>
+                <a href="/settings" data-link>System Preferences</a>
+                <a href="#about">Technical Safeguards</a>
+                <span style="color: var(--text-tertiary); font-size: 11.5px;">v1.2.0 &middot; SQLite Local</span>
+              </div>
+            </div>
           </div>
 
-          <div style="display: flex; gap: 20px;" class="df-sub">
-            <a href="/playground" data-link>Playground</a>
-            <a href="/projects" data-link>Projects</a>
-            <a href="/settings" data-link>Settings</a>
-            <a href="#about">About</a>
-          </div>
-
-          <div class="df-sub" style="font-size: 12px;">
-            &copy; ${new Date().getFullYear()} DocuForge AI. Built with Gemini & FastAPI.
+          <div style="border-top: 1px solid var(--border-subtle); padding-top: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+            <div class="df-sub" style="font-size: 12px;">
+              &copy; ${new Date().getFullYear()} DocuForge AI. Designed for engineering teams.
+            </div>
+            <div class="df-sub" style="font-size: 12px; display: flex; gap: 16px; flex-wrap: wrap;">
+              <span>Zero fabricated APIs</span>
+              <span>&bull;</span>
+              <span>Server-side secrets</span>
+              <span>&bull;</span>
+              <span>Dark-first design</span>
+            </div>
           </div>
         </div>
       </footer>
@@ -500,6 +542,23 @@ if success:
 
   // Default tab
   showPreviewTab('readme');
+
+  // Subtle section reveals (respects prefers-reduced-motion)
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && 'IntersectionObserver' in window) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('df-section-revealed');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.08 });
+
+    container.querySelectorAll('.df-section').forEach(sec => {
+      sec.classList.add('df-section-reveal');
+      observer.observe(sec);
+    });
+  }
 }
 
 function escapeHtml(str) {
