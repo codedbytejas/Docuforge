@@ -236,7 +236,7 @@ async def run_tests():
             f.write("def helper():\n    return 'hello'\n")
 
         await file_input.set_input_files([secret_file_path, normal_file_path])
-        await page.wait_for_timeout(500)
+        await page.wait_for_selector("#df-skipped-notice", state="visible", timeout=4000)
 
         # Check that .env was skipped with neutral notice
         notice_visible = await page.is_visible("#df-skipped-notice")

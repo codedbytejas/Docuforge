@@ -246,9 +246,14 @@ export async function renderPlayground(container) {
           <div id="df-view-upload" style="${inputMode === 'upload' ? '' : 'display: none;'}">
             <!-- Drag and Drop Upload Zone -->
             <div id="df-dropzone" style="border: 2px dashed var(--border-default); border-radius: var(--r-md); padding: 22px; text-align: center; cursor: pointer; margin-bottom: 16px; transition: border-color var(--trans-fast), background-color var(--trans-fast);">
-              <div style="color: var(--text-tertiary); margin-bottom: 6px;">${icons.upload(24)}</div>
-              <div style="font-size: var(--fs-sm); font-weight: 600;">Drop source files or a ZIP archive here</div>
-              <div class="df-sub" style="margin-top: 2px;">Supports .py, .js, .ts, .java, .go, .c, .cpp, .php, .rb, .rs, .html, .css, .sql, .yml, .sh (ZIPs up to 5 MB)</div>
+              <div id="df-dropzone-status" style="display: none; font-size: var(--fs-sm); color: var(--accent); font-family: var(--font-mono);">
+                ${icons.spinner(16)} Reading and validating files...
+              </div>
+              <div id="df-dropzone-prompt">
+                <div style="color: var(--text-tertiary); margin-bottom: 6px;">${icons.upload(24)}</div>
+                <div style="font-size: var(--fs-sm); font-weight: 600;">Drop source files or a ZIP archive here</div>
+                <div class="df-sub" style="margin-top: 2px;">Supports .py, .js, .ts, .java, .go, .c, .cpp, .php, .rb, .rs, .html, .css, .sql, .yml, .sh (ZIPs up to 5 MB)</div>
+              </div>
               <input type="file" id="df-file-input" multiple hidden>
             </div>
 
@@ -318,6 +323,8 @@ export async function renderPlayground(container) {
   const viewPaste = document.getElementById('df-view-paste');
 
   const dropzone = document.getElementById('df-dropzone');
+  const dropzonePrompt = document.getElementById('df-dropzone-prompt');
+  const dropzoneStatus = document.getElementById('df-dropzone-status');
   const fileInput = document.getElementById('df-file-input');
   const filesContainer = document.getElementById('df-files-container');
   const skippedNotice = document.getElementById('df-skipped-notice');
@@ -575,7 +582,7 @@ export async function renderPlayground(container) {
     skippedNoticeText.innerHTML = '';
 
     try {
-      dropzone.innerHTML = `<span class="df-mono" style="font-size: var(--fs-sm);">${icons.spinner(16)} Reading and validating files...</span>`;
+      if (dropzonePrompt) dropPromptVisible(false);
 
       const res = await api.uploadFiles(files);
       
@@ -621,15 +628,14 @@ export async function renderPlayground(container) {
       `;
       showToast(err.message, true);
     } finally {
-      dropzone.innerHTML = `
-        <div style="color: var(--text-tertiary); margin-bottom: 6px;">${icons.upload(24)}</div>
-        <div style="font-size: var(--fs-sm); font-weight: 600;">Drop source files or a ZIP archive here</div>
-        <div class="df-sub" style="margin-top: 2px;">Supports .py, .js, .ts, .java, .go, .c, .cpp, .php, .rb, .rs, .html, .css, .sql, .yml, .sh (ZIPs up to 5 MB)</div>
-        <input type="file" id="df-file-input" multiple hidden>
-      `;
-      document.getElementById('df-dropzone').onclick = () => document.getElementById('df-file-input').click();
-      document.getElementById('df-file-input').onchange = (e) => handleUpload(e.target.files);
+      if (dropzonePrompt) dropPromptVisible(true);
+      fileInput.value = '';
     }
+  }
+
+  function dropPromptVisible(show) {
+    if (dropzonePrompt) dropzonePrompt.style.display = show ? 'block' : 'none';
+    if (dropzoneStatus) dropzoneStatus.style.display = show ? 'none' : 'block';
   }
 
   runBtn.onclick = async () => {
