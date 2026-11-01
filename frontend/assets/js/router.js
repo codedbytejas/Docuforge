@@ -95,14 +95,76 @@ export function renderNavbar(currentPath) {
   `;
 }
 
+const ROUTE_META = {
+  '/': {
+    title: 'DocuForge AI — Documentation without the busywork',
+    desc: 'Turn your source code into clear, structured, developer-friendly documentation in seconds with Google Gemini.'
+  },
+  '/playground': {
+    title: 'Playground — DocuForge AI',
+    desc: 'Upload repository files or paste code to synthesize technical documentation with Google Gemini.'
+  },
+  '/processing': {
+    title: 'Generating Documentation — DocuForge AI',
+    desc: 'Real-time AI pipeline execution and code analysis runner.'
+  },
+  '/documentation': {
+    title: 'Documentation Workspace — DocuForge AI',
+    desc: 'Interactive documentation results workspace with in-place editing, markdown copy, and PDF export.'
+  },
+  '/projects': {
+    title: 'Saved Projects — DocuForge AI',
+    desc: 'Manage, search, rename, and export your documented codebase projects.'
+  },
+  '/settings': {
+    title: 'Settings — DocuForge AI',
+    desc: 'Configure system defaults, Gemini API status, and interface preferences.'
+  },
+  '404': {
+    title: 'Page Not Found — DocuForge AI',
+    desc: 'The requested page could not be found.'
+  }
+};
+
+export function renderNotFound(container) {
+  container.innerHTML = `
+    ${renderNavbar('/404')}
+    <main class="df-page" style="min-height: 70vh; display: flex; align-items: center; justify-content: center;">
+      <div class="df-card" style="max-width: 520px; text-align: center; padding: 48px 28px; width: 100%;">
+        <div class="df-badge" style="margin-bottom: 16px; color: var(--accent); border-color: var(--accent-border); background-color: var(--accent-dim);">
+          404 Error &middot; Route Not Found
+        </div>
+        <h1 class="df-title-xl" style="margin-bottom: 12px;">This page does not exist.</h1>
+        <p class="df-lead" style="margin: 0 auto 28px; font-size: 14.5px;">
+          The route you navigated to was not recognized or may have moved.
+        </p>
+        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+          <a href="/" class="df-btn" data-link>
+            ${icons.arrowLeft(14)} Return to Home
+          </a>
+          <a href="/playground" class="df-btn df-btn-primary" data-link>
+            Start Documenting ${icons.arrowRight(14)}
+          </a>
+        </div>
+      </div>
+    </main>
+  `;
+}
+
 export async function renderCurrentRoute() {
   const { path, params } = parseUrl();
   state.currentRoute = path;
 
-  // Resolve matching route or fallback to home
+  // Resolve matching route or fallback to 404
   let matchedHandler = routes[path];
-  if (!matchedHandler) {
-    matchedHandler = routes['/'];
+  const is404 = !matchedHandler;
+
+  // Update dynamic document title and meta description
+  const meta = ROUTE_META[path] || (is404 ? ROUTE_META['404'] : ROUTE_META['/']);
+  document.title = meta.title;
+  const metaDescEl = document.getElementById('df-meta-desc');
+  if (metaDescEl) {
+    metaDescEl.setAttribute('content', meta.desc);
   }
 
   // Route Guards
@@ -129,10 +191,14 @@ export async function renderCurrentRoute() {
     link.classList.toggle('active', link.getAttribute('href') === path);
   });
 
-  // Execute route renderer
+  // Execute route renderer or 404
   const appContainer = document.getElementById('app-view');
-  if (appContainer && matchedHandler) {
-    await matchedHandler(appContainer, params);
+  if (appContainer) {
+    if (matchedHandler) {
+      await matchedHandler(appContainer, params);
+    } else {
+      renderNotFound(appContainer);
+    }
   }
 
   // Re-bind theme button in navbar
