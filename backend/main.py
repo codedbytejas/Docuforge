@@ -268,33 +268,65 @@ def parse(text: str, keys):
     t = text.strip()
     if not t:
         raise HTTPException(502, "AI returned an empty response. Please retry.")
-    d = None
-    try:
-        d = json.loads(t, strict=False)
-    except Exception:
-        pass
-    if d is None and t.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*", "", t)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
+
+    # 1. Direct and stripped parse attempts
+    candidates = [
+        t,
+        re.sub(r"^```(?:json)?\s*", "", re.sub(r"\s*```$", "", t)),
+        re.sub(r"```json\s*", "", re.sub(r"```", "", t))
+    ]
+    for cand in candidates:
         try:
-            d = json.loads(cleaned, strict=False)
+            d = json.loads(cand, strict=False)
+            if isinstance(d, dict):
+                out = {k: d[k] for k in keys if isinstance(d.get(k), str) and d[k].strip()}
+                if out:
+                    return out
         except Exception:
             pass
-    if d is None:
-        brace_start = t.find("{")
-        brace_end = t.rfind("}")
-        if brace_start != -1 and brace_end > brace_start:
-            try:
-                d = json.loads(t[brace_start:brace_end + 1], strict=False)
-            except Exception:
-                pass
-    if d is None:
-        raise HTTPException(502, "AI returned malformed output. Please regenerate.")
-    if not isinstance(d, dict):
-        raise HTTPException(502, "AI returned an unexpected structure. Please regenerate.")
-    out = {k: d[k] for k in keys if isinstance(d.get(k), str) and d[k].strip()}
+
+    # 2. Extract largest brace pair and repair common trailing comma issues
+    brace_start = t.find("{")
+    brace_end = t.rfind("}")
+    if brace_start != -1 and brace_end > brace_start:
+        snippet = t[brace_start:brace_end + 1]
+        cleaned = re.sub(r",\s*([\]}])", r"\1", snippet)
+        try:
+            d = json.loads(cleaned, strict=False)
+            if isinstance(d, dict):
+                out = {k: d[k] for k in keys if isinstance(d.get(k), str) and d[k].strip()}
+                if out:
+                    return out
+        except Exception:
+            pass
+
+    # 3. Key-based robust extraction for unescaped quotes or truncated JSON
+    out = {}
+    key_positions = []
+    for k in keys:
+        m = re.search(rf'["\']{re.escape(k)}["\']\s*:\s*', t)
+        if m:
+            key_positions.append((m.start(), m.end(), k))
+
+    if key_positions:
+        key_positions.sort(key=lambda x: x[0])
+        for i, (k_start, val_start, k) in enumerate(key_positions):
+            val_end = key_positions[i+1][0] if i + 1 < len(key_positions) else len(t)
+            raw_val = t[val_start:val_end].strip()
+            if raw_val.startswith('"') or raw_val.startswith("'"):
+                raw_val = raw_val[1:]
+            raw_val = re.sub(r'["\',\s\}]+$', '', raw_val)
+            cleaned_val = (
+                raw_val.replace('\\n', '\n')
+                .replace('\\"', '"')
+                .replace('\\t', '\t')
+                .replace('\\\\', '\\')
+            )
+            if cleaned_val.strip():
+                out[k] = cleaned_val.strip()
+
     if not out:
-        raise HTTPException(502, "AI response contained no usable sections. Please regenerate.")
+        raise HTTPException(502, "AI returned malformed output. Please regenerate.")
     return out
 
 def run(p: dict, keys):
@@ -400,7 +432,19 @@ Return a single JSON object whose values are Markdown strings, with exactly thes
         # Stage 4: parsing
         update_stage("parsing", "running")
         await notify_job_listeners(job_id, get_job_record(job_id))
-        docs = parse(raw_output, keys)
+        try:
+            docs = parse(raw_output, keys)
+        except Exception as first_parse_err:
+            try:
+                update_stage("inference", "running")
+                await notify_job_listeners(job_id, get_job_record(job_id))
+                raw_output = await asyncio.to_thread(gemini, prompt)
+                update_stage("inference", "completed")
+                update_stage("parsing", "running")
+                await notify_job_listeners(job_id, get_job_record(job_id))
+                docs = parse(raw_output, keys)
+            except Exception:
+                raise first_parse_err
         update_stage("parsing", "completed")
         await notify_job_listeners(job_id, get_job_record(job_id))
 

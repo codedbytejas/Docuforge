@@ -94,7 +94,27 @@ export async function renderProcessing(container, params) {
   let timerInterval = null;
   let activeJobData = null;
 
+  function parseSqliteUtc(str) {
+    if (!str) return Date.now();
+    const iso = str.includes('Z') ? str : (str.replace(' ', 'T') + 'Z');
+    const ms = new Date(iso).getTime();
+    return isNaN(ms) ? Date.now() : ms;
+  }
+
   function updateElapsedDisplay() {
+    if (activeJobData && Array.isArray(activeJobData.stages)) {
+      const isFinished = activeJobData.status === 'completed' || activeJobData.status === 'failed' || activeJobData.status === 'cancelled';
+      if (isFinished) {
+        const totalMs = activeJobData.stages.reduce((sum, s) => sum + (s.duration_ms || 0), 0);
+        if (totalMs > 0) {
+          if (elapsedTicker) {
+            elapsedTicker.innerHTML = `${icons.clock(12)} ${(totalMs / 1000).toFixed(1)} s`;
+          }
+          return;
+        }
+      }
+    }
+
     const end = jobEndedAt || Date.now();
     const sec = Math.max(0, (end - jobStartedAt) / 1000).toFixed(1);
     if (elapsedTicker) {
@@ -341,7 +361,7 @@ export async function renderProcessing(container, params) {
   try {
     const initialJob = await api.getJob(jobId);
     if (initialJob.created_at) {
-      jobStartedAt = new Date(initialJob.created_at).getTime() || Date.now();
+      jobStartedAt = parseSqliteUtc(initialJob.created_at);
     }
     renderStages(initialJob);
 
