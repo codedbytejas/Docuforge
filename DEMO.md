@@ -100,3 +100,4 @@ For transparency during technical Q&A:
 - **Maximum File Payload:** 200 KB per individual file; 5 MB total per ZIP archive; 150 KB aggregate source code per analysis job.
 - **Exclusions:** `.env*`, `.pem`, `.key`, `.cert`, `.crt`, and binary files (`.exe`, `.dll`, `.so`, `.png`, etc.) are intentionally denied for security.
 - **Supported Languages:** 10 core languages (Python, JavaScript, TypeScript, Java, C, C++, Go, PHP, Ruby, Rust) plus a generalized `Other` plain-text parser.
+
