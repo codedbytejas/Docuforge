@@ -25,7 +25,7 @@ export async function renderProcessing(container, params) {
 
   container.innerHTML = `
     ${renderNavbar('/processing')}
-    <main class="df-page" style="max-width: 780px;">
+    <main class="df-page" id="main-content" style="max-width: 780px;">
       <div style="text-align: center; margin-bottom: 32px;">
         <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
           <span class="df-badge df-badge-running" id="df-job-badge">

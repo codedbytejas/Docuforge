@@ -20,7 +20,7 @@ export async function renderSettings(container) {
 
   container.innerHTML = `
     ${renderNavbar('/settings')}
-    <main class="df-page" style="max-width: 720px;">
+    <main class="df-page" id="main-content" style="max-width: 720px;">
       <div style="margin-bottom: 28px;">
         <h1 class="df-title-xl">Settings</h1>
         <p class="df-lead">Configure Gemini AI integration, default generation options, and workspace preferences.</p>
@@ -50,11 +50,11 @@ export async function renderSettings(container) {
         </div>
 
         <div class="df-field-group">
-          <label class="df-label">
+          <label class="df-label" for="df-active-model">
             <span>Active Model</span>
             <span class="df-sub" style="font-size: 11px;">Configured in <code>.env</code></span>
           </label>
-          <input class="df-input df-mono" value="${escapeHtml(activeModel)}" readonly disabled style="opacity: 0.85;">
+          <input id="df-active-model" class="df-input df-mono" aria-label="Active Model" value="${escapeHtml(activeModel)}" readonly disabled style="opacity: 0.85;">
           <div class="df-sub" style="margin-top: 4px; font-size: 11px;">
             Primary model for zero-shot structured technical documentation synthesis.
           </div>
@@ -66,8 +66,8 @@ export async function renderSettings(container) {
         <h2 class="df-title-md" style="margin-bottom: 16px;">Workspace Defaults</h2>
 
         <div class="df-field-group">
-          <label class="df-label">Default Programming Language</label>
-          <select class="df-select" id="df-set-lang">
+          <label class="df-label" for="df-set-lang">Default Programming Language</label>
+          <select class="df-select" id="df-set-lang" aria-label="Default Programming Language">
             ${LANGS.map(l => `<option value="${l}" ${l === state.defaultLang ? 'selected' : ''}>${l}</option>`).join('')}
           </select>
           <div class="df-sub" style="margin-top: 3px; font-size: 11px;">
@@ -76,8 +76,8 @@ export async function renderSettings(container) {
         </div>
 
         <div class="df-field-group">
-          <label class="df-label">Default Documentation Scope</label>
-          <select class="df-select" id="df-set-type">
+          <label class="df-label" for="df-set-type">Default Documentation Scope</label>
+          <select class="df-select" id="df-set-type" aria-label="Default Documentation Scope">
             ${DOC_TYPES.map(t => `<option value="${t}" ${t === state.defaultDocType ? 'selected' : ''}>${t}</option>`).join('')}
           </select>
           <div class="df-sub" style="margin-top: 3px; font-size: 11px;">

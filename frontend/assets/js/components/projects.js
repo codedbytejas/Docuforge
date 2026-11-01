@@ -28,7 +28,7 @@ export async function renderProjects(container) {
 
     container.innerHTML = `
       ${renderNavbar('/projects')}
-      <main class="df-page">
+      <main class="df-page" id="main-content">
         <!-- Header -->
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; flex-wrap: wrap; gap: 16px;">
           <div>

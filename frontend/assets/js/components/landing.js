@@ -27,7 +27,7 @@ export function renderLandingPage(container) {
   container.innerHTML = `
     ${renderNavbar('/')}
 
-    <div class="df-landing-wrapper">
+    <main class="df-landing-wrapper" id="main-content">
       <!-- 1. Hero Section -->
       <section class="df-hero-section" id="hero">
         <div class="df-hero-ambient"></div>
@@ -352,6 +352,8 @@ export function renderLandingPage(container) {
         </div>
       </section>
 
+      </main>
+
       <!-- 9. Footer Section -->
       <footer class="df-footer">
         <div class="df-container">
@@ -415,7 +417,6 @@ export function renderLandingPage(container) {
           </div>
         </div>
       </footer>
-    </div>
   `;
 
   // Bind smooth scroll on navigation links

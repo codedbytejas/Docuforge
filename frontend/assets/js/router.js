@@ -37,6 +37,7 @@ export function renderNavbar(currentPath) {
   const showCta = !isPlaygroundOrProcessing;
 
   return `
+    <a href="#main-content" class="df-skip-link">Skip to content</a>
     <header class="df-navbar">
       <div class="df-navbar-inner">
         <a href="/" class="df-brand" data-link>
@@ -129,7 +130,7 @@ const ROUTE_META = {
 export function renderNotFound(container) {
   container.innerHTML = `
     ${renderNavbar('/404')}
-    <main class="df-page" style="min-height: 70vh; display: flex; align-items: center; justify-content: center;">
+    <main class="df-page" id="main-content" style="min-height: 70vh; display: flex; align-items: center; justify-content: center;">
       <div class="df-card" style="max-width: 520px; text-align: center; padding: 48px 28px; width: 100%;">
         <div class="df-badge" style="margin-bottom: 16px; color: var(--accent); border-color: var(--accent-border); background-color: var(--accent-dim);">
           404 Error &middot; Route Not Found

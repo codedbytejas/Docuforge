@@ -92,7 +92,7 @@ export async function renderDocumentation(container, params) {
 
     container.innerHTML = `
       ${renderNavbar('/documentation')}
-      <main class="df-page" style="max-width: 1380px;">
+      <main class="df-page" id="main-content" style="max-width: 1380px;">
         <!-- Top Workspace Toolbar -->
         <div class="df-workspace-toolbar" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 14px; padding-bottom: 16px; border-bottom: 1px solid var(--border-subtle);">
           <div style="min-width: 0;">

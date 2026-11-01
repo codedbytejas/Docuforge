@@ -203,7 +203,7 @@ export async function renderPlayground(container) {
 
   container.innerHTML = `
     ${renderNavbar('/playground')}
-    <main class="df-page">
+    <main class="df-page" id="main-content">
       <div style="margin-bottom: 28px;">
         <h1 class="df-title-xl">Let's document your code.</h1>
         <p class="df-lead">Provide your source code and let DocuForge AI turn it into structured technical documentation.</p>
