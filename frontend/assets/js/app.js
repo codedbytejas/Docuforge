@@ -53,7 +53,7 @@ async function init() {
   }
 
   // Initial render based on browser location
-  const fullPath = (window.location.pathname || '/') + (window.location.search || '');
+  const fullPath = (window.location.pathname || '/') + (window.location.search || '') + (window.location.hash || '');
   navigate(fullPath, true);
 }
 

@@ -33,7 +33,9 @@ export async function renderDocumentation(container, params) {
     }
   }
 
-  let currentTab = 'readme';
+  const tabParam = urlParams.get('tab');
+  const initialHash = (window.location.hash || '').replace('#', '').toLowerCase();
+  let currentTab = (tabParam && SECTIONS_META[tabParam]) ? tabParam : ((initialHash && SECTIONS_META[initialHash]) ? initialHash : 'readme');
   let isEditing = false;
 
   function extractFiles(code, projectName, projectLang) {
@@ -163,7 +165,7 @@ export async function renderDocumentation(container, params) {
                   const isActive = currentTab === key;
                   const hasContent = Boolean(docs[key] && !docs[key].includes('_Not generated'));
                   return `
-                    <button type="button" class="df-btn df-btn-ghost df-btn-sm df-tab-btn" data-key="${key}" style="justify-content: space-between; text-align: left; padding: 8px 12px; ${isActive ? 'background: var(--bg-surface-active); color: var(--text-primary); font-weight: 600; border-left: 2px solid var(--accent);' : ''}">
+                    <button type="button" class="df-btn df-btn-ghost df-btn-sm df-tab-btn df-doc-nav-item" data-key="${key}" style="justify-content: space-between; text-align: left; padding: 8px 12px; ${isActive ? 'background: var(--bg-surface-active); color: var(--text-primary); font-weight: 600; border-left: 2px solid var(--accent);' : ''}">
                       <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="color: ${isActive ? 'var(--accent)' : 'var(--text-tertiary)'};">${icons.fileText(14)}</span>
                         <span>${label}</span>
@@ -252,6 +254,9 @@ export async function renderDocumentation(container, params) {
       b.onclick = () => {
         if (!checkUnsavedChanges()) return;
         currentTab = b.dataset.key;
+        try {
+          window.history.replaceState(null, '', `${window.location.pathname}?project_id=${project.id}&tab=${currentTab}`);
+        } catch (e) {}
         isEditing = false;
         renderWorkspace();
         window.scrollTo({ top: 0, behavior: 'smooth' });
