@@ -57,6 +57,37 @@ A developer-first, AI-powered codebase documentation generator built with FastAP
 
 ---
 
+## Rate Limiting & Quota Protection
+
+DocuForge AI incorporates proactive, multi-layered rate limiting and quota management to prevent any single client from starving Gemini API limits, protect global application budgets, and gracefully recover without silent failures.
+
+### Architecture Highlights
+- **Dual-Key Identity**: Clients are tracked via signed, `HttpOnly` anonymous cookies (`df_client_id`) using HMAC-SHA256 combined with the client socket IP address. Dual accounting ensures that clearing browser cookies does NOT reset limits (IP limit governs), and changing IPs with the same cookie does not reset limits (cookie governs).
+- **Swappable Atomic Storage**: Limiter events, concurrency slots, and generation caches are stored in SQLite (`backend/docuforge.db`) using atomic sliding-window transactions and automatic expired row cleanup, fully swappable with Redis in high-scale environments.
+- **Fail-Safe Fallback**: If SQLite experiences I/O or lock contention, the system immediately fails safe to an in-memory fallback store (`InMemoryFallbackStorage`) rather than allowing unlimited quota exhaustion.
+- **Zero-Quota Caching**: Generation results are keyed by a SHA-256 hash of `(code, language, documentation_type, section, model, prompt_version)`. Identical requests return cached documentation with `"cached": true`, zero Gemini API calls, and zero quota consumed.
+- **Upstream Protection**: Gemini 429 / `RESOURCE_EXHAUSTED` responses trigger exponential backoff with random jitter (up to 2 retries, bounded wait) before gracefully surfacing friendly, retryable 429 notices.
+
+### Configuration Reference
+
+All rate limits are configured via environment variables with zero hardcoded values:
+
+| Variable | Default | Purpose / Tuning Guide |
+| :--- | :--- | :--- |
+| `RL_ENABLED` | `true` | Master rate limiter toggle (`false` for development/testing). |
+| `RL_GENERATIONS_PER_HOUR` | `5` | Maximum full codebase generation jobs allowed per user per hour. |
+| `RL_GENERATIONS_PER_DAY` | `15` | Maximum full codebase generation jobs allowed per user per day. |
+| `RL_REGENERATIONS_PER_HOUR` | `15` | Maximum individual section regenerations allowed per user per hour. |
+| `RL_MAX_CONCURRENT_JOBS_PER_USER` | `1` | Concurrency guard preventing multiple parallel analysis jobs per client. |
+| `RL_GLOBAL_REQUESTS_PER_MINUTE` | `15` | App-wide ceiling on Gemini calls per minute (tune to match your Google AI tier). |
+| `RL_GLOBAL_DAILY_REQUESTS` | `1500` | App-wide ceiling on Gemini calls per day. |
+| `RL_MAX_INPUT_CHARS` | `150000` | Maximum allowed source code characters (150 KB) validated before consuming quota. |
+| `RL_UPLOADS_PER_MINUTE` | `10` | Maximum source file upload operations allowed per minute per user. |
+| `TRUSTED_PROXY` | `false` | When `false`, strictly uses socket address `request.client.host`. Set `true` only behind trusted reverse proxies (Nginx, Cloudflare) to read `X-Forwarded-For`. |
+| `RL_SECRET_KEY` | *(GEMINI_API_KEY)* | Secret key used for signing client identity cookies. |
+
+---
+
 ## Quickstart
 
 ### 1. Setup Environment
@@ -87,6 +118,9 @@ Open **http://127.0.0.1:8000** in your browser.
 The test suite runs with Playwright across headless Chromium, validating the complete end-to-end user journey:
 
 ```bash
+# Run rate limiting and quota protection test suite (10 comprehensive tests)
+PYTHONPATH=backend .venv/bin/python3 backend/test_rate_limit.py
+
 # Run comprehensive demo-ready E2E suite (56 tests covering intro, copy, upload, generation, persistence, responsive sweep)
 .venv/bin/python scratch/verify_demo_ready.py
 
