@@ -507,13 +507,37 @@ Return a single JSON object whose values are Markdown strings, with exactly thes
                 break
         update_stage(curr, "failed", err_msg)
         await notify_job_listeners(job_id, get_job_record(job_id))
+    finally:
+        if rate_limit.config.enabled:
+            rate_limit.safe_storage_op("release_slot", lambda s: s.release_concurrency_slot(job_id))
 
 @app.post("/api/projects/{pid}/jobs")
 async def create_job(pid: int, request: Request):
     p = get_project(pid)
     identity = get_identity(request)
+
+    rate_limit.check_global_limits()
     rate_limit.check_user_generation_limit(identity)
+
     jid = f"job_{uuid.uuid4().hex[:12]}"
+    if rate_limit.config.enabled:
+        acquired = rate_limit.safe_storage_op(
+            "acquire_concurrency",
+            lambda s: s.acquire_concurrency_slot(
+                job_id=jid,
+                user_key=identity.user_key,
+                ip_key=identity.ip_key,
+                max_concurrent=rate_limit.config.max_concurrent_jobs
+            )
+        )
+        if not acquired:
+            rate_limit.log_rate_limit_event("concurrency", identity.anonymized_id(), f"/api/projects/{pid}/jobs", 10.0)
+            rate_limit.raise_rate_limited(
+                "concurrency",
+                "You already have an active generation job in progress. Please wait for it to complete.",
+                10.0
+            )
+
     initial_stages = []
     for s in STAGE_DEFINITIONS:
         initial_stages.append({
@@ -545,6 +569,8 @@ async def cancel_job(jid: str):
     job = get_job_record(jid)
     if not job:
         raise HTTPException(404, "Job not found")
+    if rate_limit.config.enabled:
+        rate_limit.safe_storage_op("release_slot", lambda s: s.release_concurrency_slot(jid))
     with db() as c:
         c.execute(
             "UPDATE jobs SET status='cancelled', error='Generation cancelled by user', updated_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -599,6 +625,7 @@ async def stream_job(jid: str, request: Request):
 def generate(pid: int, request: Request):
     p = get_project(pid)
     identity = get_identity(request)
+    rate_limit.check_global_limits()
     rate_limit.check_user_generation_limit(identity)
     keys = resolve_keys_for_doc_type(p.get("doc_type"))
     docs = run(p, keys)
@@ -616,6 +643,7 @@ def regenerate(pid: int, section: str, request: Request):
         raise HTTPException(400, "Unknown section.")
     p = get_project(pid)
     identity = get_identity(request)
+    rate_limit.check_global_limits()
     rate_limit.check_user_regeneration_limit(identity)
     p["docs"][section] = run(p, [section])[section]
     with db() as c:
