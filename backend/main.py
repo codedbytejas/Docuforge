@@ -203,7 +203,9 @@ def delete_project(pid: int):
     return {"ok": True}
 
 @app.post("/api/upload")
-async def upload(files: list[UploadFile] = File(...)):
+async def upload(request: Request, files: list[UploadFile] = File(...)):
+    identity = get_identity(request)
+    rate_limit.check_upload_limit(identity)
     parsed_files = []
     skipped = []
 
@@ -507,8 +509,10 @@ Return a single JSON object whose values are Markdown strings, with exactly thes
         await notify_job_listeners(job_id, get_job_record(job_id))
 
 @app.post("/api/projects/{pid}/jobs")
-async def create_job(pid: int):
-    get_project(pid)
+async def create_job(pid: int, request: Request):
+    p = get_project(pid)
+    identity = get_identity(request)
+    rate_limit.check_user_generation_limit(identity)
     jid = f"job_{uuid.uuid4().hex[:12]}"
     initial_stages = []
     for s in STAGE_DEFINITIONS:
@@ -592,8 +596,10 @@ async def stream_job(jid: str, request: Request):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.post("/api/projects/{pid}/generate")
-def generate(pid: int):
+def generate(pid: int, request: Request):
     p = get_project(pid)
+    identity = get_identity(request)
+    rate_limit.check_user_generation_limit(identity)
     keys = resolve_keys_for_doc_type(p.get("doc_type"))
     docs = run(p, keys)
     final_docs = dict(p.get("docs") or {})
@@ -605,10 +611,12 @@ def generate(pid: int):
     return get_project(pid)
 
 @app.post("/api/projects/{pid}/regenerate/{section}")
-def regenerate(pid: int, section: str):
+def regenerate(pid: int, section: str, request: Request):
     if section not in SECTIONS:
         raise HTTPException(400, "Unknown section.")
     p = get_project(pid)
+    identity = get_identity(request)
+    rate_limit.check_user_regeneration_limit(identity)
     p["docs"][section] = run(p, [section])[section]
     with db() as c:
         c.execute("UPDATE projects SET docs=?,status='Documented',updated=CURRENT_TIMESTAMP WHERE id=?", (json.dumps(p["docs"]), pid))
