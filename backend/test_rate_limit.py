@@ -336,6 +336,50 @@ class TestRateLimitingAndQuotaProtection(unittest.IsolatedAsyncioTestCase):
             self.assertIn("key_exhausted", calls)
             self.assertIn("key_valid_fallback", calls)
 
+    async def test_12_groq_integration_and_cross_provider_failover(self):
+        """12. Groq Cloud integration: standalone Groq generation and cross-provider failover."""
+        from main import gemini
+
+        # Mock httpx response for Groq
+        mock_groq_resp = MagicMock()
+        mock_groq_resp.status_code = 200
+        mock_groq_resp.json.return_value = {
+            "choices": [{"message": {"content": '{"readme": "# Groq Generated Documentation"}'}}]
+        }
+
+        mock_httpx_client = MagicMock()
+        mock_httpx_client.__enter__.return_value = mock_httpx_client
+        mock_httpx_client.post.return_value = mock_groq_resp
+
+        # Sub-test A: Standalone Groq when only GROQ_API_KEY is configured
+        env_vars_groq_only = {
+            "GEMINI_API_KEY": "",
+            "GEMINI_API_KEYS": "",
+            "GROQ_API_KEY": "gsk_test_key_123",
+            "GROQ_MODEL": "llama-3.3-70b-versatile"
+        }
+        with patch("os.getenv", side_effect=lambda k, d=None: env_vars_groq_only.get(k, d)), \
+             patch("httpx.Client", return_value=mock_httpx_client):
+            res = gemini("test prompt")
+            self.assertIn("Groq Generated Documentation", res)
+
+        # Sub-test B: Cross-provider failover: Gemini fails -> automatically routes to Groq
+        mock_gemini_client = MagicMock()
+        mock_gemini_client.__enter__.return_value = mock_gemini_client
+        mock_gemini_client.models.generate_content.side_effect = RuntimeError("429 RESOURCE_EXHAUSTED: Gemini quota depleted")
+
+        env_vars_failover = {
+            "GEMINI_API_KEY": "gemini_depleted_key",
+            "GROQ_API_KEY": "gsk_backup_key_456",
+            "GROQ_MODEL": "llama-3.3-70b-versatile"
+        }
+        with patch("os.getenv", side_effect=lambda k, d=None: env_vars_failover.get(k, d)), \
+             patch("google.genai.Client", return_value=mock_gemini_client), \
+             patch("httpx.Client", return_value=mock_httpx_client), \
+             patch("time.sleep"):
+            res = gemini("test prompt")
+            self.assertIn("Groq Generated Documentation", res)
+
 
 if __name__ == "__main__":
     unittest.main()

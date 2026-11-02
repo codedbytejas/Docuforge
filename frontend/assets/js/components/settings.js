@@ -16,8 +16,11 @@ export async function renderSettings(container) {
   }
 
   const isConfigured = Boolean(state.status?.gemini_configured);
-  const keyPoolSize = state.status?.key_pool_size || (isConfigured ? 1 : 0);
+  const isGroqConfigured = Boolean(state.status?.groq_configured);
+  const keyPoolSize = state.status?.gemini_key_pool_size || (isConfigured ? 1 : 0);
+  const groqPoolSize = state.status?.groq_key_pool_size || (isGroqConfigured ? 1 : 0);
   const activeModel = state.status?.model || 'gemini-3.5-flash';
+  const groqModel = state.status?.groq_model || 'llama-3.3-70b-versatile';
   const rateLimits = state.status?.rate_limits;
 
   container.innerHTML = `
@@ -25,7 +28,7 @@ export async function renderSettings(container) {
     <main class="df-page" id="main-content" style="max-width: 720px;">
       <div style="margin-bottom: 28px;">
         <h1 class="df-title-xl">Settings</h1>
-        <p class="df-lead">Configure Gemini AI integration, default generation options, and workspace preferences.</p>
+        <p class="df-lead">Configure Gemini AI integration, Groq Cloud backup, and workspace rate limits.</p>
       </div>
 
       <!-- Gemini AI Service Card -->
@@ -40,7 +43,7 @@ export async function renderSettings(container) {
         <div style="padding: 14px 16px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--r-md); margin-bottom: 18px;">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
             <div>
-              <b style="font-size: var(--fs-sm);">API Credential & Fallback Pool</b>
+              <b style="font-size: var(--fs-sm);">Gemini API Credential & Fallback Pool</b>
               <div class="df-sub" style="font-size: var(--fs-xs); margin-top: 2px;">
                 ${isConfigured ? `${keyPoolSize} Gemini API Key${keyPoolSize > 1 ? 's' : ''} active in auto-failover pool. If a key runs out of quota, DocuForge seamlessly routes to the next key.` : 'No API key detected in server environment.'}
               </div>
@@ -63,7 +66,45 @@ export async function renderSettings(container) {
           </label>
           <input id="df-active-model" class="df-input df-mono" aria-label="Active Model" value="${escapeHtml(activeModel)}" readonly disabled style="opacity: 0.85;">
           <div class="df-sub" style="margin-top: 4px; font-size: 11px;">
-            Primary model for zero-shot structured technical documentation synthesis.
+            Primary Google model for zero-shot structured technical documentation synthesis.
+          </div>
+        </div>
+      </div>
+
+      <!-- Groq AI Service Card -->
+      <div class="df-card" style="margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+          <h2 class="df-title-md" style="margin: 0;">Groq Cloud Integration (High-Speed LPU)</h2>
+          <span class="df-badge ${isGroqConfigured ? 'df-badge-documented' : ''}" style="${isGroqConfigured ? '' : 'background: var(--bg-surface-elevated); color: var(--text-tertiary);'}">
+            ${isGroqConfigured ? `${icons.check(12)} Configured (${groqPoolSize} Key${groqPoolSize > 1 ? 's' : ''})` : `Optional Failover`}
+          </span>
+        </div>
+
+        <div style="padding: 14px 16px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--r-md); margin-bottom: 18px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+            <div>
+              <b style="font-size: var(--fs-sm);">Groq LPU Engine & High Availability Failover</b>
+              <div class="df-sub" style="font-size: var(--fs-xs); margin-top: 2px;">
+                ${isGroqConfigured ? `${groqPoolSize} Groq API Key${groqPoolSize > 1 ? 's' : ''} active. High-availability backup enabled if Gemini quota is reached.` : 'Add <code>GROQ_API_KEY</code> in <code>.env</code> for automatic cross-provider failover.'}
+              </div>
+            </div>
+            <span class="df-mono df-sub" style="font-size: 11px; background: var(--bg-surface); padding: 4px 8px; border-radius: var(--r-xs); border: 1px solid var(--border-subtle);">
+              ${isGroqConfigured ? `${groqPoolSize} KEY${groqPoolSize > 1 ? 'S' : ''} ACTIVE` : 'STANDBY'}
+            </span>
+          </div>
+          <div class="df-sub" style="margin-top: 8px; font-size: 11.5px; color: var(--text-tertiary); border-top: 1px solid var(--border-subtle); padding-top: 8px;">
+            Set <code>GROQ_API_KEY=gsk_...</code> in your <code>.env</code>. Multiple keys supported via <code>GROQ_API_KEYS=key1,key2</code> or <code>GROQ_API_KEY_1</code>, <code>GROQ_API_KEY_2</code>.
+          </div>
+        </div>
+
+        <div class="df-field-group">
+          <label class="df-label" for="df-groq-model">
+            <span>Groq Model</span>
+            <span class="df-sub" style="font-size: 11px;">Configured in <code>.env</code></span>
+          </label>
+          <input id="df-groq-model" class="df-input df-mono" aria-label="Groq Model" value="${escapeHtml(groqModel)}" readonly disabled style="opacity: 0.85;">
+          <div class="df-sub" style="margin-top: 4px; font-size: 11px;">
+            LLaMA 3.3 70B Versatile on Groq LPUs for sub-second structured JSON technical analysis.
           </div>
         </div>
       </div>

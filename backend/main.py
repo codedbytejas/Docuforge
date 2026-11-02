@@ -190,13 +190,47 @@ def get_gemini_api_keys() -> list[str]:
 
     return keys
 
+def get_groq_api_keys() -> list[str]:
+    """Retrieve deduplicated list of Groq API keys from environment for automatic failover."""
+    load_dotenv(ROOT.parent / ".env", override=True)
+    keys = []
+
+    # 1. Comma / newline separated GROQ_API_KEYS
+    multi_raw = os.getenv("GROQ_API_KEYS", "")
+    if multi_raw:
+        for k in re.split(r'[,;\n]+', multi_raw):
+            k = k.strip()
+            if k and k not in keys:
+                keys.append(k)
+
+    # 2. Sequential indexed keys: GROQ_API_KEY_1, GROQ_API_KEY_2, ...
+    for idx in range(1, 11):
+        indexed = os.getenv(f"GROQ_API_KEY_{idx}", "").strip()
+        if indexed and indexed not in keys:
+            keys.append(indexed)
+
+    # 3. Standard single key: GROQ_API_KEY
+    single = os.getenv("GROQ_API_KEY", "").strip()
+    if single and single not in keys:
+        keys.append(single)
+
+    return keys
+
 @app.get("/api/status")
 def status():
-    keys = get_gemini_api_keys()
+    gemini_keys = get_gemini_api_keys()
+    groq_keys = get_groq_api_keys()
+    active_provider = os.getenv("AI_PROVIDER", "gemini" if gemini_keys else ("groq" if groq_keys else "none")).lower()
     return {
-        "gemini_configured": bool(keys),
-        "key_pool_size": len(keys),
+        "gemini_configured": bool(gemini_keys),
+        "groq_configured": bool(groq_keys),
+        "ai_configured": bool(gemini_keys or groq_keys),
+        "active_provider": active_provider,
+        "key_pool_size": len(gemini_keys) + len(groq_keys),
+        "gemini_key_pool_size": len(gemini_keys),
+        "groq_key_pool_size": len(groq_keys),
         "model": os.getenv("GEMINI_MODEL", "gemini-3.5-flash"),
+        "groq_model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
         "sections": list(SECTIONS),
         "supported_languages": SUPPORTED_LANGUAGES,
         "stages": STAGE_DEFINITIONS,
@@ -334,10 +368,7 @@ def normalize_section_key(k: str) -> str:
             return target
     return cleaned
 
-def gemini(prompt: str) -> str:
-    api_keys = get_gemini_api_keys()
-    if not api_keys:
-        raise HTTPException(503, "GEMINI_API_KEY is not set. Copy .env.example to .env, add your key, restart the server.")
+def _call_gemini(prompt: str, api_keys: list[str]) -> str:
     from google import genai
     from google.genai import types
 
@@ -351,7 +382,7 @@ def gemini(prompt: str) -> str:
     last_err = None
     exhausted_keys_count = 0
 
-    # Auto-failover across multiple API keys if configured
+    # Auto-failover across multiple Gemini API keys
     for key_idx, key in enumerate(api_keys):
         anonymized_key = f"...{key[-4:]}" if len(key) >= 4 else f"key#{key_idx+1}"
         key_exhausted_or_invalid = False
@@ -371,14 +402,14 @@ def gemini(prompt: str) -> str:
                         r = client.models.generate_content(model=model_name, contents=prompt, config=cfg)
                         if r.text and r.text.strip():
                             if key_idx > 0:
-                                print(f"[KEY_FAILOVER] Request succeeded using fallback API key #{key_idx + 1} ({anonymized_key})")
+                                print(f"[GEMINI_KEY_FAILOVER] Request succeeded using fallback API key #{key_idx + 1} ({anonymized_key})")
                             return r.text.strip()
                 except Exception as e:
                     m = str(e)
                     last_err = m
                     # 1. Invalid / rejected key -> switch to next fallback key immediately
                     if "API key" in m or "401" in m or "403" in m:
-                        print(f"[KEY_FAILOVER] API key #{key_idx + 1} ({anonymized_key}) invalid or unauthorized. Switching to next fallback key...")
+                        print(f"[GEMINI_KEY_FAILOVER] API key #{key_idx + 1} ({anonymized_key}) invalid or unauthorized. Switching to next fallback key...")
                         key_exhausted_or_invalid = True
                         break
                     # 2. Quota / Rate limit (429 / RESOURCE_EXHAUSTED) -> backoff with jitter up to 2 times, then fail over
@@ -387,7 +418,7 @@ def gemini(prompt: str) -> str:
                             backoff = 1.0 * (2 ** retry_idx) + random.uniform(0.1, 0.4)
                             time.sleep(backoff)
                             continue
-                        print(f"[KEY_FAILOVER] API key #{key_idx + 1} ({anonymized_key}) exhausted quota after retries. Switching to next fallback key...")
+                        print(f"[GEMINI_KEY_FAILOVER] API key #{key_idx + 1} ({anonymized_key}) exhausted quota after retries. Switching to next fallback key...")
                         key_exhausted_or_invalid = True
                         exhausted_keys_count += 1
                         break
@@ -409,6 +440,113 @@ def gemini(prompt: str) -> str:
         )
     key_note = f" across {len(api_keys)} key(s)" if len(api_keys) > 1 else ""
     raise HTTPException(502, f"Gemini request failed{key_note}: " + (last_err or "Empty response")[:200])
+
+def call_groq(prompt: str) -> str:
+    """Invokes Groq OpenAI-compatible Chat Completions API with multi-key failover."""
+    groq_keys = get_groq_api_keys()
+    if not groq_keys:
+        raise HTTPException(503, "GROQ_API_KEY is not set. Add your key in Settings or .env.")
+
+    preferred = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    models = [preferred]
+    for m in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]:
+        if m not in models:
+            models.append(m)
+
+    last_err = None
+    for key_idx, key in enumerate(groq_keys):
+        anonymized_key = f"...{key[-4:]}" if len(key) >= 4 else f"groq#{key_idx+1}"
+        key_failed = False
+
+        for model_name in models:
+            if key_failed:
+                break
+            for retry_idx in range(2):
+                try:
+                    headers = {
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": model_name,
+                        "messages": [
+                            {"role": "user", "content": prompt}
+                        ],
+                        "response_format": {"type": "json_object"},
+                        "temperature": 0.2
+                    }
+                    with httpx.Client(timeout=httpx.Timeout(60.0, connect=15.0, read=60.0, write=15.0)) as client:
+                        resp = client.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            content = data["choices"][0]["message"]["content"]
+                            if content and content.strip():
+                                if key_idx > 0:
+                                    print(f"[GROQ_FAILOVER] Request succeeded using fallback Groq key #{key_idx + 1} ({anonymized_key})")
+                                return content.strip()
+
+                        m = f"Groq HTTP {resp.status_code}: {resp.text[:200]}"
+                        last_err = m
+                        if resp.status_code in (401, 403):
+                            print(f"[GROQ_FAILOVER] Groq key #{key_idx + 1} ({anonymized_key}) invalid or unauthorized. Switching to next key...")
+                            key_failed = True
+                            break
+                        if resp.status_code == 429:
+                            if retry_idx < 1:
+                                time.sleep(1.0 + random.uniform(0.1, 0.3))
+                                continue
+                            print(f"[GROQ_FAILOVER] Groq key #{key_idx + 1} ({anonymized_key}) rate limited. Switching to next key...")
+                            key_failed = True
+                            break
+                        if resp.status_code >= 500:
+                            if retry_idx < 1:
+                                time.sleep(1.0 + random.uniform(0.1, 0.3))
+                                continue
+                            break
+                except Exception as e:
+                    last_err = str(e)
+                    break
+
+    raise HTTPException(502, f"Groq request failed across {len(groq_keys)} key(s): " + (last_err or "Empty response")[:200])
+
+def gemini(prompt: str) -> str:
+    """Dispatches generation prompt across configured Gemini and Groq API keys with seamless cross-provider failover."""
+    gemini_keys = get_gemini_api_keys()
+    groq_keys = get_groq_api_keys()
+
+    if not gemini_keys and not groq_keys:
+        raise HTTPException(
+            503,
+            "No AI API key configured. Set GEMINI_API_KEY or GROQ_API_KEY in your .env or Settings."
+        )
+
+    provider_preference = os.getenv("AI_PROVIDER", "gemini").lower()
+
+    if provider_preference == "groq" and groq_keys:
+        try:
+            return call_groq(prompt)
+        except Exception as groq_err:
+            if gemini_keys:
+                print(f"[PROVIDER_FAILOVER] Preferred Groq provider failed ({groq_err}). Seamlessly falling back to Gemini...")
+                return _call_gemini(prompt, gemini_keys)
+            raise
+
+    if gemini_keys:
+        try:
+            return _call_gemini(prompt, gemini_keys)
+        except Exception as gemini_err:
+            if groq_keys:
+                print(f"[PROVIDER_FAILOVER] Gemini keys exhausted ({gemini_err}). Seamlessly failing over to Groq Cloud...")
+                try:
+                    return call_groq(prompt)
+                except Exception as groq_err:
+                    raise HTTPException(
+                        502,
+                        f"Both Gemini and Groq failover exhausted. Gemini: {str(gemini_err)[:100]} | Groq: {str(groq_err)[:100]}"
+                    )
+            raise
+
+    return call_groq(prompt)
 
 def parse(text: str, keys):
     t = (text or "").strip()
@@ -638,9 +776,9 @@ async def process_job_task(job_id: str, project_id: int, identity: Optional[rate
         # Stage 2: dispatch
         update_stage("dispatch", "running")
         await notify_job_listeners(job_id, get_job_record(job_id))
-        keys_pool = get_gemini_api_keys()
+        keys_pool = get_gemini_api_keys() or get_groq_api_keys()
         if not keys_pool or p.get("name") == "__test_missing_key__":
-            raise ValueError("GEMINI_API_KEY is not set. Add your key in Settings or .env.")
+            raise ValueError("No AI API key configured. Add GEMINI_API_KEY or GROQ_API_KEY in Settings or .env.")
         if p.get("name") == "__test_forced_failure__":
             raise RuntimeError("Gemini API error (503 Service Unavailable): Model overloaded. Please retry.")
 
