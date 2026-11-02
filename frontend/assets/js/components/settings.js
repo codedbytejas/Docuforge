@@ -17,6 +17,7 @@ export async function renderSettings(container) {
 
   const isConfigured = Boolean(state.status?.gemini_configured);
   const activeModel = state.status?.model || 'gemini-3.5-flash';
+  const rateLimits = state.status?.rate_limits;
 
   container.innerHTML = `
     ${renderNavbar('/settings')}
@@ -57,6 +58,51 @@ export async function renderSettings(container) {
           <input id="df-active-model" class="df-input df-mono" aria-label="Active Model" value="${escapeHtml(activeModel)}" readonly disabled style="opacity: 0.85;">
           <div class="df-sub" style="margin-top: 4px; font-size: 11px;">
             Primary model for zero-shot structured technical documentation synthesis.
+          </div>
+        </div>
+      </div>
+
+      <!-- Usage & Quota Limits Card -->
+      <div class="df-card" style="margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+          <h2 class="df-title-md" style="margin: 0;">Usage & Quota Protection</h2>
+          <span class="df-badge ${rateLimits?.enabled !== false ? 'df-badge-documented' : ''}">
+            ${rateLimits?.enabled !== false ? `${icons.check(12)} Active Protection` : 'Disabled'}
+          </span>
+        </div>
+
+        <p class="df-sub" style="margin-bottom: 16px;">
+          Read-only system rate limits configured server-side via environment variables to protect Gemini API quotas.
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+          <div style="padding: 12px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--r-md);">
+            <div class="df-sub" style="font-size: var(--fs-xs);">User Generations</div>
+            <div style="font-size: var(--fs-md); font-weight: 600; margin-top: 2px;">
+              ${rateLimits?.generations_per_hour ?? 5} / hour &middot; ${rateLimits?.generations_per_day ?? 15} / day
+            </div>
+            <div class="df-sub" style="font-size: 11px; margin-top: 2px; color: var(--text-tertiary);">RL_GENERATIONS_PER_HOUR</div>
+          </div>
+          <div style="padding: 12px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--r-md);">
+            <div class="df-sub" style="font-size: var(--fs-xs);">Section Regenerations</div>
+            <div style="font-size: var(--fs-md); font-weight: 600; margin-top: 2px;">
+              ${rateLimits?.regenerations_per_hour ?? 15} / hour
+            </div>
+            <div class="df-sub" style="font-size: 11px; margin-top: 2px; color: var(--text-tertiary);">RL_REGENERATIONS_PER_HOUR</div>
+          </div>
+          <div style="padding: 12px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--r-md);">
+            <div class="df-sub" style="font-size: var(--fs-xs);">Concurrency & Uploads</div>
+            <div style="font-size: var(--fs-md); font-weight: 600; margin-top: 2px;">
+              ${rateLimits?.max_concurrent_jobs ?? 1} job &middot; ${rateLimits?.uploads_per_minute ?? 10} uploads/min
+            </div>
+            <div class="df-sub" style="font-size: 11px; margin-top: 2px; color: var(--text-tertiary);">RL_MAX_CONCURRENT_JOBS_PER_USER</div>
+          </div>
+          <div style="padding: 12px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--r-md);">
+            <div class="df-sub" style="font-size: var(--fs-xs);">Global Gemini Budget</div>
+            <div style="font-size: var(--fs-md); font-weight: 600; margin-top: 2px;">
+              ${rateLimits?.global_requests_per_minute ?? 15} / min &middot; ${rateLimits?.global_daily_requests ?? 1500} / day
+            </div>
+            <div class="df-sub" style="font-size: 11px; margin-top: 2px; color: var(--text-tertiary);">RL_GLOBAL_REQUESTS_PER_MINUTE</div>
           </div>
         </div>
       </div>

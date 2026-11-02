@@ -296,8 +296,14 @@ export async function renderPlayground(container) {
             0 lines &middot; 0 B
           </div>
 
-          <!-- Action Button -->
+          <!-- Action Button & Quota Indicator -->
           <div style="margin-top: 20px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+              <span class="df-sub df-mono" id="df-quota-badge" style="font-size: var(--fs-xs); display: inline-flex; align-items: center; gap: 4px;">
+                Checking usage quota...
+              </span>
+              <span class="df-sub df-mono" id="df-quota-reset" style="font-size: var(--fs-xs); color: var(--text-tertiary); display: none;"></span>
+            </div>
             <button class="df-btn df-btn-primary df-btn-lg" id="df-btn-run" style="width: 100%;" disabled>
               Run AI Analysis & Generate ${icons.arrowRight(16)}
             </button>
@@ -347,6 +353,89 @@ export async function renderPlayground(container) {
   const runBtn = document.getElementById('df-btn-run');
   const runHint = document.getElementById('df-run-hint');
   const statsEl = document.getElementById('df-code-stats');
+  const quotaBadge = document.getElementById('df-quota-badge');
+  const quotaReset = document.getElementById('df-quota-reset');
+
+  let quotaState = null;
+  let rateLimitTimer = null;
+  let rateLimitSecondsLeft = 0;
+  let rateLimitMessage = '';
+
+  function formatCountdown(sec) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  function startRateLimitCountdown(seconds, msg = '') {
+    if (rateLimitTimer) clearInterval(rateLimitTimer);
+    rateLimitSecondsLeft = Math.max(1, Math.ceil(seconds));
+    rateLimitMessage = msg;
+    updateRateLimitUI();
+
+    rateLimitTimer = setInterval(() => {
+      rateLimitSecondsLeft -= 1;
+      if (rateLimitSecondsLeft <= 0) {
+        clearInterval(rateLimitTimer);
+        rateLimitTimer = null;
+        rateLimitSecondsLeft = 0;
+        rateLimitMessage = '';
+        loadQuotaUsage();
+      } else {
+        updateRateLimitUI();
+      }
+    }, 1000);
+  }
+
+  function updateRateLimitUI() {
+    if (rateLimitSecondsLeft > 0) {
+      runBtn.disabled = true;
+      runBtn.innerHTML = `${icons.clock(16)} Limit reached. Resets in ${formatCountdown(rateLimitSecondsLeft)}`;
+      runHint.textContent = rateLimitMessage || `Hourly generation limit reached. Resets in ${formatCountdown(rateLimitSecondsLeft)}.`;
+      runHint.style.color = 'var(--accent)';
+      if (quotaReset) {
+        quotaReset.style.display = 'inline';
+        quotaReset.textContent = `Resets in ${formatCountdown(rateLimitSecondsLeft)}`;
+      }
+    } else {
+      runBtn.innerHTML = `Run AI Analysis & Generate ${icons.arrowRight(16)}`;
+      if (quotaReset) quotaReset.style.display = 'none';
+      checkValid();
+    }
+  }
+
+  async function loadQuotaUsage() {
+    try {
+      const usage = await api.getUsage();
+      quotaState = usage;
+      if (!usage.rate_limiting_enabled) {
+        if (quotaBadge) quotaBadge.innerHTML = `${icons.check(12)} Quota protection active`;
+        return;
+      }
+
+      const hourlyRem = usage.generations?.hourly_remaining ?? 0;
+      const hourlyLim = usage.generations?.hourly_limit ?? 5;
+      const resetSec = usage.generations?.hourly_reset_seconds ?? 0;
+
+      if (quotaBadge) {
+        if (hourlyRem <= 0) {
+          quotaBadge.innerHTML = `<span style="color: var(--status-err);">${icons.alert(12)} 0 of ${hourlyLim} generations left this hour</span>`;
+        } else {
+          quotaBadge.innerHTML = `${icons.sparkle(12)} ${hourlyRem} of ${hourlyLim} generations left this hour`;
+        }
+      }
+
+      if (!usage.service_available) {
+        startRateLimitCountdown(60, 'Service is temporarily busy under heavy traffic. Please wait.');
+      } else if (hourlyRem <= 0 && resetSec > 0) {
+        startRateLimitCountdown(resetSec, `Hourly generation limit reached (${hourlyLim}/${hourlyLim}). Resets in ${formatCountdown(resetSec)}.`);
+      } else if (rateLimitSecondsLeft <= 0) {
+        checkValid();
+      }
+    } catch (e) {
+      if (quotaBadge) quotaBadge.textContent = 'Quota monitoring active';
+    }
+  }
 
   const sectionsPreview = document.getElementById('df-sections-preview');
   const scopeBadge = document.getElementById('df-scope-badge');
@@ -516,6 +605,15 @@ export async function renderPlayground(container) {
   }
 
   function checkValid() {
+    if (rateLimitSecondsLeft > 0) {
+      runBtn.disabled = true;
+      runBtn.innerHTML = `${icons.clock(16)} Limit reached. Resets in ${formatCountdown(rateLimitSecondsLeft)}`;
+      runHint.textContent = rateLimitMessage || `Hourly limit reached. Resets in ${formatCountdown(rateLimitSecondsLeft)}.`;
+      runHint.style.color = 'var(--accent)';
+      saveDraft();
+      return;
+    }
+
     const hasName = Boolean(nameInput.value.trim());
     let totalBytes = 0;
     let totalLines = 0;
@@ -705,9 +803,18 @@ export async function renderPlayground(container) {
       sessionStorage.removeItem('df_playground_draft');
       navigate(`/processing?job_id=${job.id}`);
     } catch (err) {
-      showToast(err.message, true);
-      runBtn.disabled = false;
-      runBtn.innerHTML = `Run AI Analysis & Generate ${icons.arrowRight(16)}`;
+      if (err.status === 429) {
+        const retrySec = err.retryAfter || (err.data && err.data.retry_after_seconds) || 60;
+        const scope = (err.data && err.data.scope) || 'user';
+        const msg = err.message || (scope === 'global' ? 'Service is busy under heavy load. Please retry shortly.' : 'You have reached your request limit.');
+        showToast(msg, true);
+        startRateLimitCountdown(retrySec, msg);
+      } else {
+        showToast(err.message, true);
+        runBtn.disabled = false;
+        runBtn.innerHTML = `Run AI Analysis & Generate ${icons.arrowRight(16)}`;
+        checkValid();
+      }
     }
   };
 
@@ -716,6 +823,7 @@ export async function renderPlayground(container) {
   renderFileList();
   updateOutputScope();
   checkValid();
+  loadQuotaUsage();
 }
 
 function formatBytes(bytes) {

@@ -10,10 +10,12 @@ export async function request(path, options = {}) {
   const data = await res.json().catch(() => ({}));
   
   if (!res.ok) {
-    const message = typeof data.detail === 'string' ? data.detail : `Request failed (${res.status})`;
+    const message = typeof data.message === 'string' ? data.message : (typeof data.detail === 'string' ? data.detail : `Request failed (${res.status})`);
     const error = new Error(message);
     error.status = res.status;
     error.detail = data.detail;
+    error.data = data;
+    error.retryAfter = parseInt(res.headers.get('Retry-After') || data.retry_after_seconds || '0', 10);
     throw error;
   }
   return data;
@@ -21,6 +23,7 @@ export async function request(path, options = {}) {
 
 export const api = {
   getStatus: () => request('/status'),
+  getUsage: () => request('/usage'),
   getProjects: () => request('/projects'),
   getProject: (pid) => request(`/projects/${pid}`),
   createProject: (project) => request('/projects', { method: 'POST', body: JSON.stringify(project) }),

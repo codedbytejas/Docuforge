@@ -229,7 +229,11 @@ export async function renderProcessing(container, params) {
       if (jobSub) {
         jobSub.textContent = 'Synthesized technical documentation successfully.';
       }
-      showToast('Documentation successfully generated!');
+      if (job.cached) {
+        showToast('Loaded from cache — quota preserved');
+      } else {
+        showToast('Documentation successfully generated!');
+      }
       setTimeout(() => {
         navigate(`/documentation?project_id=${job.project_id}`);
       }, 700);
@@ -250,15 +254,41 @@ export async function renderProcessing(container, params) {
         let title = 'Generation encountered an error';
         let detail = job.error || 'Gemini processing failed. Please verify API key or try again.';
         let showSettings = false;
+        let retrySeconds = 0;
 
         const lowErr = (job.error || '').toLowerCase();
+        const retrySecMatch = lowErr.match(/try again in (\d+)\s*(?:second|minute|s|m)/);
+        if (retrySecMatch) {
+          const num = parseInt(retrySecMatch[1], 10);
+          retrySeconds = lowErr.includes('minute') ? num * 60 : num;
+        } else if (lowErr.includes('wait a moment') || lowErr.includes('retry in 30')) {
+          retrySeconds = 30;
+        }
+
+        function formatRetryTimeStr(secs) {
+          const d = new Date(Date.now() + secs * 1000);
+          const hh = String(d.getHours()).padStart(2, '0');
+          const mm = String(d.getMinutes()).padStart(2, '0');
+          return `${hh}:${mm}`;
+        }
+
         if (lowErr.includes('gemini_api_key') || lowErr.includes('api key')) {
           title = 'Gemini API Key Required';
           detail = 'The server does not have GEMINI_API_KEY configured. Please provide your key in Settings or your server environment.';
           showSettings = true;
-        } else if (lowErr.includes('429') || lowErr.includes('rate limit') || lowErr.includes('resource_exhausted')) {
-          title = 'Gemini Rate Limit Reached';
-          detail = 'Gemini rate limits were encountered. Please wait a brief moment and retry the generation.';
+        } else if (lowErr.includes('429') || lowErr.includes('rate_limited') || lowErr.includes('rate limit') || lowErr.includes('resource_exhausted')) {
+          if (lowErr.includes('busy') || lowErr.includes('global') || lowErr.includes('traffic') || lowErr.includes('capacity')) {
+            title = 'Service Busy Under Heavy Load';
+            const atTime = retrySeconds > 0 ? ` Try again at ${formatRetryTimeStr(retrySeconds)}.` : ' Please retry shortly.';
+            detail = `The Gemini AI model capacity is temporarily saturated.${atTime}`;
+          } else if (lowErr.includes('active generation job') || lowErr.includes('already have') || lowErr.includes('concurrency')) {
+            title = 'Active Analysis in Progress';
+            detail = 'You already have an analysis job in progress. Please wait for it to complete or cancel it.';
+          } else {
+            title = 'Usage Quota Limit Reached';
+            const atTime = retrySeconds > 0 ? ` Try again at ${formatRetryTimeStr(retrySeconds)}.` : ' Quota resets hourly.';
+            detail = `You have reached your generation limit.${atTime}`;
+          }
         } else if (lowErr.includes('malformed') || lowErr.includes('unexpected structure') || lowErr.includes('empty')) {
           title = 'Malformed AI Output';
           detail = 'The AI model returned an unexpected response structure. Click Retry to request a clean regeneration.';
@@ -290,6 +320,22 @@ export async function renderProcessing(container, params) {
 
         const retryBtn = document.getElementById('df-btn-retry');
         if (retryBtn) {
+          if (retrySeconds > 0) {
+            let left = retrySeconds;
+            retryBtn.disabled = true;
+            retryBtn.innerHTML = `${icons.clock(14)} Retry in ${left}s`;
+            const retryInterval = setInterval(() => {
+              left -= 1;
+              if (left <= 0) {
+                clearInterval(retryInterval);
+                retryBtn.disabled = false;
+                retryBtn.innerHTML = `${icons.refresh(14)} Retry Generation`;
+              } else {
+                retryBtn.innerHTML = `${icons.clock(14)} Retry in ${left}s`;
+              }
+            }, 1000);
+          }
+
           retryBtn.onclick = async () => {
             try {
               retryBtn.disabled = true;
