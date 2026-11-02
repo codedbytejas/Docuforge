@@ -230,7 +230,7 @@ def status():
         "gemini_key_pool_size": len(gemini_keys),
         "groq_key_pool_size": len(groq_keys),
         "model": os.getenv("GEMINI_MODEL", "gemini-3.5-flash"),
-        "groq_model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        "groq_model": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
         "sections": list(SECTIONS),
         "supported_languages": SUPPORTED_LANGUAGES,
         "stages": STAGE_DEFINITIONS,
@@ -372,10 +372,10 @@ def _call_gemini(prompt: str, api_keys: list[str]) -> str:
     from google import genai
     from google.genai import types
 
-    socket.setdefaulttimeout(120.0)
+    socket.setdefaulttimeout(180.0)
     preferred = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
     candidates = [preferred]
-    for fb in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-latest"]:
+    for fb in ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-flash-latest"]:
         if fb not in candidates:
             candidates.append(fb)
 
@@ -392,10 +392,10 @@ def _call_gemini(prompt: str, api_keys: list[str]) -> str:
                 break
             for retry_idx in range(3):
                 try:
-                    # Note: google-genai HttpOptions.timeout is in milliseconds (120,000ms = 120s)
+                    # Note: google-genai HttpOptions.timeout is in milliseconds (180,000ms = 180s)
                     client_opts = types.HttpOptions(
-                        timeout=120000,
-                        client_args={"timeout": httpx.Timeout(120.0, connect=30.0, read=120.0, write=30.0)}
+                        timeout=180000,
+                        client_args={"timeout": httpx.Timeout(180.0, connect=30.0, read=180.0, write=30.0)}
                     )
                     with genai.Client(api_key=key, http_options=client_opts) as client:
                         cfg = types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2)
@@ -423,7 +423,7 @@ def _call_gemini(prompt: str, api_keys: list[str]) -> str:
                         exhausted_keys_count += 1
                         break
                     # 3. Transient timeout or 503 error on this model -> retry once before trying next model
-                    if "503" in m or "404" in m or "closed" in m or "timeout" in m.lower():
+                    if "503" in m or "404" in m or "closed" in m or "timeout" in m.lower() or "timed out" in m.lower() or "deadline" in m.lower():
                         if retry_idx < 1:
                             time.sleep(1.0 + random.uniform(0.1, 0.3))
                             continue
@@ -439,7 +439,12 @@ def _call_gemini(prompt: str, api_keys: list[str]) -> str:
             30.0
         )
     key_note = f" across {len(api_keys)} key(s)" if len(api_keys) > 1 else ""
-    raise HTTPException(502, f"Gemini request failed{key_note}: " + (last_err or "Empty response")[:200])
+    err_str = last_err or "Empty response"
+    if "timed out" in err_str.lower() or "timeout" in err_str.lower():
+        hint = " Generation timed out upstream. Tip: Set GROQ_API_KEY in .env/Render for sub-second backup generation."
+    else:
+        hint = ""
+    raise HTTPException(502, f"Gemini request failed{key_note}: {err_str[:200]}.{hint}")
 
 def call_groq(prompt: str) -> str:
     """Invokes Groq OpenAI-compatible Chat Completions API with multi-key failover."""
@@ -447,9 +452,9 @@ def call_groq(prompt: str) -> str:
     if not groq_keys:
         raise HTTPException(503, "GROQ_API_KEY is not set. Add your key in Settings or .env.")
 
-    preferred = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    preferred = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     models = [preferred]
-    for m in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]:
+    for m in ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
         if m not in models:
             models.append(m)
 

@@ -3,6 +3,9 @@
 __pycache__/
 .venv/
 *.pdf
+.DS_Store
+*/.DS_Store
+scratch/*.png
 scratch/pdf_pages/
 scratch/documentation_report.html
 scratch/.env

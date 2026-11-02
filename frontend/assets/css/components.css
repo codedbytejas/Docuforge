@@ -766,25 +766,47 @@ textarea:focus:not(:focus-visible) {
 .df-doc-outline-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 280px;
+  gap: 3px;
+  max-height: min(440px, calc(100vh - 300px));
   overflow-y: auto;
-  padding-right: 2px;
+  padding: 4px 6px 8px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
+}
+
+.df-doc-outline-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.df-doc-outline-list::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--r-pill);
 }
 
 .df-doc-anchor {
-  display: block !important;
-  flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-height: 28px !important;
   padding: 5px 8px !important;
   border-radius: var(--r-xs);
-  font-size: 12px !important;
-  line-height: 1.45 !important;
+  font-family: var(--font-sans) !important;
+  font-size: 12.5px !important;
+  line-height: 1.5 !important;
   color: var(--text-secondary);
   text-decoration: none;
+  box-sizing: border-box !important;
+  transition: background-color var(--trans-fast), color var(--trans-fast);
+}
+
+.df-doc-anchor-text {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: background-color var(--trans-fast), color var(--trans-fast);
+  line-height: 1.5;
+  font-size: 12.5px;
+  max-width: 100%;
 }
 
 .df-doc-anchor:hover {

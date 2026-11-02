@@ -20,7 +20,7 @@ export async function renderSettings(container) {
   const keyPoolSize = state.status?.gemini_key_pool_size || (isConfigured ? 1 : 0);
   const groqPoolSize = state.status?.groq_key_pool_size || (isGroqConfigured ? 1 : 0);
   const activeModel = state.status?.model || 'gemini-3.5-flash';
-  const groqModel = state.status?.groq_model || 'llama-3.3-70b-versatile';
+  const groqModel = state.status?.groq_model || 'openai/gpt-oss-120b';
   const rateLimits = state.status?.rate_limits;
 
   container.innerHTML = `
@@ -104,7 +104,7 @@ export async function renderSettings(container) {
           </label>
           <input id="df-groq-model" class="df-input df-mono" aria-label="Groq Model" value="${escapeHtml(groqModel)}" readonly disabled style="opacity: 0.85;">
           <div class="df-sub" style="margin-top: 4px; font-size: 11px;">
-            LLaMA 3.3 70B Versatile on Groq LPUs for sub-second structured JSON technical analysis.
+            OpenAI GPT-OSS 120B on Groq LPUs for sub-second structured JSON technical analysis.
           </div>
         </div>
       </div>

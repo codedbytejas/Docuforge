@@ -179,14 +179,15 @@ export async function renderDocumentation(container, params) {
 
             <!-- In-document Outline (if headings exist) -->
             ${headingMatches.length > 0 && !isEditing ? `
-              <div class="df-card" id="df-doc-outline-card" style="padding: 14px;">
-                <div class="df-sub" style="font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; margin-bottom: 10px; color: var(--text-tertiary);">
+              <div class="df-card" id="df-doc-outline-card" style="padding: 16px;">
+                <div class="df-outline-title" style="font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; margin-bottom: 10px; color: var(--text-tertiary); line-height: 1.4;">
                   In-Section Outline
                 </div>
-                <div class="df-doc-outline-list" style="display: flex; flex-direction: column; gap: 2px; max-height: 280px; overflow-y: auto;">
+                <div class="df-doc-outline-list">
                   ${headingMatches.map(h => `
-                    <a href="#df-h-${h.slug}" class="df-sub df-doc-anchor" style="padding: 5px 8px; border-radius: var(--r-xs); font-size: 12px; line-height: 1.45; margin-left: ${(h.level - 1) * 10}px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; display: block; transition: color var(--trans-fast), background-color var(--trans-fast);">
-                      ${escapeHtml(h.text)}
+                    <a href="#df-h-${h.slug}" class="df-doc-anchor" style="margin-left: ${(h.level - 1) * 12}px;" title="${escapeHtml(h.text)}">
+                      <span class="df-doc-anchor-bullet" style="color: ${h.level === 1 ? 'var(--accent)' : 'var(--text-tertiary)'}; font-size: ${h.level === 1 ? '8px' : '6px'}; line-height: 1; flex-shrink: 0; opacity: 0.85;">●</span>
+                      <span class="df-doc-anchor-text">${escapeHtml(h.text)}</span>
                     </a>
                   `).join('')}
                 </div>
