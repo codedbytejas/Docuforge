@@ -113,6 +113,33 @@ Open **http://127.0.0.1:8000** in your browser.
 
 ---
 
+## Deploy to Render
+
+DocuForge AI is pre-configured for instant zero-configuration deployment on [Render](https://render.com).
+
+### Option A: Automatic Blueprint Deployment (Recommended)
+1. Push your repository to GitHub.
+2. In the [Render Dashboard](https://dashboard.render.com), click **New +** > **Blueprint**.
+3. Select your `Docuforge` repository. Render will automatically detect [`render.yaml`](file:///Users/tejaschavan1907/Downloads/docuforge/render.yaml).
+4. When prompted, enter your `GEMINI_API_KEY`.
+5. Click **Apply**. Render will automatically build and deploy your service!
+
+### Option B: Manual Web Service Setup
+1. In the [Render Dashboard](https://dashboard.render.com), click **New +** > **Web Service**.
+2. Connect your GitHub repository `codedbytejas/Docuforge`.
+3. Set the following settings:
+   - **Environment**: `Python 3`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
+4. Under **Environment Variables**, add:
+   - `GEMINI_API_KEY`: *(your Google AI Studio key)*
+   - `TRUSTED_PROXY`: `true` (enables accurate client IP rate limiting behind Render's proxy)
+   - `GEMINI_MODEL`: `gemini-3.5-flash` (optional, defaults to `gemini-3.5-flash`)
+   - `PYTHON_VERSION`: `3.12.8`
+5. Click **Create Web Service**.
+
+---
+
 ## Automated Verification Tests
 
 The test suite validates rate limiting, concurrency controls, cache preservation, and complete browser user journeys:

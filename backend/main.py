@@ -1,18 +1,21 @@
 """DocuForge AI backend: FastAPI + Gemini + SQLite + Real Job Progress. The API key lives only in the environment."""
-import asyncio, io, json, os, random, re, sqlite3, time, uuid, zipfile
+import asyncio, io, json, os, random, re, sqlite3, sys, time, uuid, zipfile
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from fastapi import FastAPI, File, HTTPException, UploadFile, Request
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exception_handlers import http_exception_handler
 from pydantic import BaseModel, Field
 import rate_limit
-
-ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT.parent / ".env")
-DB = ROOT / "docuforge.db"
+DB = Path(os.getenv("DB_PATH", str(ROOT / "docuforge.db")))
 MAX_FILE, MAX_ZIP, MAX_ZIP_FILES, MAX_CODE = 200_000, 5_000_000, 40, 150_000
 CODE_EXT = {
     ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".c", ".h", ".cpp", ".hpp", ".cc",

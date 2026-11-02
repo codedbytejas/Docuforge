@@ -23,7 +23,7 @@ from fastapi import Request, Response, HTTPException
 logger = logging.getLogger("docuforge.ratelimit")
 
 ROOT = Path(__file__).resolve().parent
-DB_PATH = ROOT / "docuforge.db"
+DB_PATH = Path(os.getenv("DB_PATH", str(ROOT / "docuforge.db")))
 
 # ---------------------------------------------------------------------------
 # Configuration Helpers
