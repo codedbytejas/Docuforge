@@ -1,8 +1,9 @@
 """DocuForge AI backend: FastAPI + Gemini + SQLite + Real Job Progress. The API key lives only in the environment."""
-import asyncio, io, json, os, random, re, sqlite3, sys, time, uuid, zipfile
+import asyncio, io, json, os, random, re, socket, sqlite3, sys, time, uuid, zipfile
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
+import httpx
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
@@ -289,6 +290,23 @@ async def upload(request: Request, files: list[UploadFile] = File(...)):
         "truncated": len(code) > MAX_CODE
     }
 
+SECTION_ALIASES = {
+    "readme": ["readme", "readme.md", "overview", "project_overview", "summary", "introduction", "general"],
+    "functions": ["functions", "function", "functions_and_methods", "methods", "functions_reference", "function_documentation"],
+    "classes": ["classes", "class", "classes_and_objects", "oop_classes", "class_documentation", "data_structures"],
+    "usage": ["usage", "how_to_use", "examples", "code_examples", "quickstart", "getting_started", "usage_examples"],
+    "api": ["api", "api_reference", "endpoints", "public_api", "rest_api", "interfaces"],
+    "dependencies": ["dependencies", "deps", "requirements", "libraries", "imports", "external_dependencies"],
+    "architecture": ["architecture", "arch", "system_architecture", "design", "modules", "structure", "data_flow"],
+}
+
+def normalize_section_key(k: str) -> str:
+    cleaned = re.sub(r'[^a-z0-9]', '', str(k).lower())
+    for target, aliases in SECTION_ALIASES.items():
+        if cleaned == target or cleaned in [re.sub(r'[^a-z0-9]', '', a) for a in aliases]:
+            return target
+    return cleaned
+
 def gemini(prompt: str) -> str:
     load_dotenv(ROOT.parent / ".env", override=True)
     key = os.getenv("GEMINI_API_KEY")
@@ -297,9 +315,10 @@ def gemini(prompt: str) -> str:
     from google import genai
     from google.genai import types
 
+    socket.setdefaulttimeout(120.0)
     preferred = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
     candidates = [preferred]
-    for fb in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]:
+    for fb in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-latest"]:
         if fb not in candidates:
             candidates.append(fb)
 
@@ -307,7 +326,11 @@ def gemini(prompt: str) -> str:
     for model_name in candidates:
         for retry_idx in range(3):
             try:
-                client_opts = types.HttpOptions(timeout=60.0)
+                # Note: google-genai HttpOptions.timeout is in milliseconds (120,000ms = 120s)
+                client_opts = types.HttpOptions(
+                    timeout=120000,
+                    client_args={"timeout": httpx.Timeout(120.0, connect=30.0, read=120.0, write=30.0)}
+                )
                 with genai.Client(api_key=key, http_options=client_opts) as client:
                     cfg = types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2)
                     r = client.models.generate_content(model=model_name, contents=prompt, config=cfg)
@@ -325,8 +348,8 @@ def gemini(prompt: str) -> str:
                         continue
                     break
                 if "503" in m or "404" in m or "closed" in m or "timeout" in m.lower():
-                    if retry_idx < 1:
-                        time.sleep(0.5 + random.uniform(0.1, 0.3))
+                    if retry_idx < 2:
+                        time.sleep(1.5 * (retry_idx + 1) + random.uniform(0.1, 0.3))
                         continue
                     break
                 break
@@ -341,29 +364,42 @@ def gemini(prompt: str) -> str:
     raise HTTPException(502, "Gemini request failed: " + (last_err or "Empty response")[:200])
 
 def parse(text: str, keys):
-    t = text.strip()
+    t = (text or "").strip()
     if not t:
         raise HTTPException(502, "AI returned an empty response. Please retry.")
 
-    def extract_from_dict(d: dict) -> dict:
-        if not isinstance(d, dict):
-            return {}
-        # Check if wrapped in top-level key like "documentation", "sections", "docs", "result"
-        for wrap_key in ("documentation", "sections", "docs", "result", "data"):
-            if wrap_key in d and isinstance(d[wrap_key], dict):
-                d = d[wrap_key]
-                break
-
-        lower_d = {str(k).strip().lower(): v for k, v in d.items()}
+    def extract_from_obj(obj) -> dict:
         res = {}
-        for k in keys:
-            val = lower_d.get(k.lower())
-            if val is not None:
-                if isinstance(val, (list, dict)):
-                    res[k] = json.dumps(val, indent=2)
-                elif isinstance(val, str) and val.strip():
-                    res[k] = val.strip()
+        if isinstance(obj, dict):
+            for wrap_key in ("documentation", "sections", "docs", "result", "data", "response", "output"):
+                if wrap_key in obj and isinstance(obj[wrap_key], (dict, list)):
+                    return extract_from_obj(obj[wrap_key])
+            for k, v in obj.items():
+                norm = normalize_section_key(k)
+                if norm in keys:
+                    if isinstance(v, (list, dict)):
+                        res[norm] = json.dumps(v, indent=2)
+                    elif isinstance(v, str) and v.strip():
+                        res[norm] = v.strip()
+                    elif v is not None:
+                        res[norm] = str(v).strip()
+        elif isinstance(obj, list):
+            for item in obj:
+                if isinstance(item, dict):
+                    sec_name = item.get("section") or item.get("title") or item.get("name") or item.get("key")
+                    sec_val = item.get("content") or item.get("text") or item.get("markdown") or item.get("body") or item.get("value")
+                    if sec_name and sec_val:
+                        norm = normalize_section_key(sec_name)
+                        if norm in keys:
+                            res[norm] = str(sec_val).strip()
+                    else:
+                        for k, v in item.items():
+                            norm = normalize_section_key(k)
+                            if norm in keys and isinstance(v, str) and v.strip():
+                                res[norm] = v.strip()
         return res
+
+    out = {}
 
     # 1. Direct and stripped parse attempts
     candidates = [
@@ -374,70 +410,79 @@ def parse(text: str, keys):
     for cand in candidates:
         try:
             d = json.loads(cand, strict=False)
-            if isinstance(d, dict):
-                out = extract_from_dict(d)
-                if out:
-                    return out
+            res = extract_from_obj(d)
+            if res:
+                out.update(res)
+                break
         except Exception:
             pass
 
     # 2. Extract largest brace pair and repair common trailing comma issues
-    brace_start = t.find("{")
-    brace_end = t.rfind("}")
-    if brace_start != -1 and brace_end > brace_start:
-        snippet = t[brace_start:brace_end + 1]
-        cleaned = re.sub(r",\s*([\]}])", r"\1", snippet)
-        try:
-            d = json.loads(cleaned, strict=False)
-            if isinstance(d, dict):
-                out = extract_from_dict(d)
-                if out:
-                    return out
-        except Exception:
-            pass
+    if not out:
+        b_start, b_end = t.find("{"), t.rfind("}")
+        if b_start != -1 and b_end > b_start:
+            snippet = re.sub(r",\s*([\]}])", r"\1", t[b_start:b_end + 1])
+            try:
+                d = json.loads(snippet, strict=False)
+                res = extract_from_obj(d)
+                if res:
+                    out.update(res)
+            except Exception:
+                pass
 
     # 3. Key-based robust extraction for unescaped quotes or truncated JSON
-    out = {}
-    key_positions = []
-    for k in keys:
-        m = re.search(rf'["\']{re.escape(k)}["\']\s*:\s*', t, re.IGNORECASE)
-        if m:
-            key_positions.append((m.start(), m.end(), k))
+    if not out:
+        key_positions = []
+        for k in keys:
+            aliases = SECTION_ALIASES.get(k, [k])
+            for a in aliases:
+                m = re.search(rf'["\']{re.escape(a)}["\']\s*:\s*', t, re.IGNORECASE)
+                if m:
+                    key_positions.append((m.start(), m.end(), k))
+                    break
 
-    if key_positions:
-        key_positions.sort(key=lambda x: x[0])
-        for i, (k_start, val_start, k) in enumerate(key_positions):
-            val_end = key_positions[i+1][0] if i + 1 < len(key_positions) else len(t)
-            raw_val = t[val_start:val_end].strip()
-            if raw_val.startswith('"') or raw_val.startswith("'"):
-                raw_val = raw_val[1:]
-            raw_val = re.sub(r'["\',\s\}]+$', '', raw_val)
-            cleaned_val = (
-                raw_val.replace('\\n', '\n')
-                .replace('\\"', '"')
-                .replace('\\t', '\t')
-                .replace('\\\\', '\\')
-            )
-            if cleaned_val.strip():
-                out[k] = cleaned_val.strip()
-
-    if out:
-        return out
+        if key_positions:
+            key_positions.sort(key=lambda x: x[0])
+            for i, (k_start, val_start, k) in enumerate(key_positions):
+                val_end = key_positions[i+1][0] if i + 1 < len(key_positions) else len(t)
+                raw_val = t[val_start:val_end].strip()
+                if raw_val.startswith('"') or raw_val.startswith("'"):
+                    raw_val = raw_val[1:]
+                raw_val = re.sub(r'["\',\s\}]+$', '', raw_val)
+                cleaned_val = (
+                    raw_val.replace('\\n', '\n')
+                    .replace('\\"', '"')
+                    .replace('\\t', '\t')
+                    .replace('\\\\', '\\')
+                )
+                if cleaned_val.strip():
+                    out[k] = cleaned_val.strip()
 
     # 4. Fallback: markdown heading extraction
-    for k in keys:
-        m = re.search(rf'(?:^|\n)#+\s*{re.escape(k)}\b[^\n]*\n([\s\S]*?)(?=(?:\n#+|$))', t, re.IGNORECASE)
-        if m and m.group(1).strip():
-            out[k] = m.group(1).strip()
+    if not out:
+        for k in keys:
+            aliases = SECTION_ALIASES.get(k, [k])
+            for a in aliases:
+                m = re.search(rf'(?:^|\n)#+\s*{re.escape(a)}\b[^\n]*\n([\s\S]*?)(?=(?:\n#+|$))', t, re.IGNORECASE)
+                if m and m.group(1).strip():
+                    out[k] = m.group(1).strip()
+                    break
 
-    # 5. Last resort: if text exists, put it under readme
+    # 5. Last resort: if substantive text exists, map it to readme or first key
     if not out and t:
         clean_text = re.sub(r"^```(?:json|markdown)?\s*", "", re.sub(r"\s*```$", "", t)).strip()
         if clean_text:
-            out["readme"] = clean_text
+            target = "readme" if "readme" in keys else keys[0]
+            out[target] = clean_text
 
     if not out:
         raise HTTPException(502, "AI returned malformed output. Please regenerate.")
+
+    # Ensure all requested keys are present so frontend never breaks
+    for k in keys:
+        if k not in out or not out[k].strip():
+            out[k] = "_Documentation for this section was not detailed in source code analysis._"
+
     return out
 
 def run(p: dict, keys):
