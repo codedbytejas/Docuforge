@@ -110,7 +110,12 @@ with db() as c:
     c.execute("""CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, project_id INTEGER NOT NULL,
       status TEXT NOT NULL, current_stage TEXT NOT NULL, stages TEXT NOT NULL, error TEXT DEFAULT '',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      cached INTEGER DEFAULT 0,
       FOREIGN KEY(project_id) REFERENCES projects(id))""")
+    try:
+        c.execute("ALTER TABLE jobs ADD COLUMN cached INTEGER DEFAULT 0")
+    except Exception:
+        pass
 
 def row(r):
     d = dict(r)
@@ -120,6 +125,7 @@ def row(r):
 def row_job(r):
     d = dict(r)
     d["stages"] = json.loads(d["stages"] or "[]")
+    d["cached"] = bool(d.get("cached", 0))
     return d
 
 class ProjectIn(BaseModel):
@@ -320,6 +326,26 @@ def parse(text: str, keys):
     if not t:
         raise HTTPException(502, "AI returned an empty response. Please retry.")
 
+    def extract_from_dict(d: dict) -> dict:
+        if not isinstance(d, dict):
+            return {}
+        # Check if wrapped in top-level key like "documentation", "sections", "docs", "result"
+        for wrap_key in ("documentation", "sections", "docs", "result", "data"):
+            if wrap_key in d and isinstance(d[wrap_key], dict):
+                d = d[wrap_key]
+                break
+
+        lower_d = {str(k).strip().lower(): v for k, v in d.items()}
+        res = {}
+        for k in keys:
+            val = lower_d.get(k.lower())
+            if val is not None:
+                if isinstance(val, (list, dict)):
+                    res[k] = json.dumps(val, indent=2)
+                elif isinstance(val, str) and val.strip():
+                    res[k] = val.strip()
+        return res
+
     # 1. Direct and stripped parse attempts
     candidates = [
         t,
@@ -330,7 +356,7 @@ def parse(text: str, keys):
         try:
             d = json.loads(cand, strict=False)
             if isinstance(d, dict):
-                out = {k: d[k] for k in keys if isinstance(d.get(k), str) and d[k].strip()}
+                out = extract_from_dict(d)
                 if out:
                     return out
         except Exception:
@@ -345,7 +371,7 @@ def parse(text: str, keys):
         try:
             d = json.loads(cleaned, strict=False)
             if isinstance(d, dict):
-                out = {k: d[k] for k in keys if isinstance(d.get(k), str) and d[k].strip()}
+                out = extract_from_dict(d)
                 if out:
                     return out
         except Exception:
@@ -355,7 +381,7 @@ def parse(text: str, keys):
     out = {}
     key_positions = []
     for k in keys:
-        m = re.search(rf'["\']{re.escape(k)}["\']\s*:\s*', t)
+        m = re.search(rf'["\']{re.escape(k)}["\']\s*:\s*', t, re.IGNORECASE)
         if m:
             key_positions.append((m.start(), m.end(), k))
 
@@ -375,6 +401,21 @@ def parse(text: str, keys):
             )
             if cleaned_val.strip():
                 out[k] = cleaned_val.strip()
+
+    if out:
+        return out
+
+    # 4. Fallback: markdown heading extraction
+    for k in keys:
+        m = re.search(rf'(?:^|\n)#+\s*{re.escape(k)}\b[^\n]*\n([\s\S]*?)(?=(?:\n#+|$))', t, re.IGNORECASE)
+        if m and m.group(1).strip():
+            out[k] = m.group(1).strip()
+
+    # 5. Last resort: if text exists, put it under readme
+    if not out and t:
+        clean_text = re.sub(r"^```(?:json|markdown)?\s*", "", re.sub(r"\s*```$", "", t)).strip()
+        if clean_text:
+            out["readme"] = clean_text
 
     if not out:
         raise HTTPException(502, "AI returned malformed output. Please regenerate.")
@@ -449,6 +490,40 @@ async def process_job_task(job_id: str, project_id: int, identity: Optional[rate
 
         if get_job_record(job_id)["status"] == "cancelled":
             return
+
+        model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+        cache_key = rate_limit.compute_cache_key(
+            code=p["code"],
+            language=p.get("language", "Python"),
+            doc_type=p.get("doc_type", "Full documentation"),
+            section="all",
+            model=model_name
+        )
+        cached_docs = rate_limit.default_storage.get_cached_docs(cache_key)
+        if cached_docs and isinstance(cached_docs, dict) and all(k in cached_docs for k in keys):
+            # Cache hit: instant synthesis, zero quota consumed
+            update_stage("dispatch", "completed")
+            update_stage("inference", "completed")
+            update_stage("parsing", "completed")
+            update_stage("persisting", "running")
+            await notify_job_listeners(job_id, get_job_record(job_id))
+
+            final_docs = dict(p.get("docs") or {})
+            final_docs.update(cached_docs)
+            for k in SECTIONS:
+                final_docs.setdefault(k, "_Not generated. Try regenerating this section._")
+            with db() as c:
+                c.execute(
+                    "UPDATE projects SET docs=?,status='Documented',updated=CURRENT_TIMESTAMP WHERE id=?",
+                    (json.dumps(final_docs), project_id)
+                )
+                c.execute("UPDATE jobs SET cached=1 WHERE id=?", (job_id,))
+            update_stage("persisting", "completed")
+            rec = get_job_record(job_id)
+            rec["cached"] = True
+            await notify_job_listeners(job_id, rec)
+            return
+
         # Stage 2: dispatch
         update_stage("dispatch", "running")
         await notify_job_listeners(job_id, get_job_record(job_id))
@@ -499,6 +574,8 @@ Return a single JSON object whose values are Markdown strings, with exactly thes
         update_stage("parsing", "completed")
         await notify_job_listeners(job_id, get_job_record(job_id))
 
+        rate_limit.default_storage.set_cached_docs(cache_key, docs, model_name)
+
         if identity and rate_limit.config.enabled:
             rate_limit.record_real_generation_quota(identity, is_regeneration=False)
 
@@ -534,6 +611,11 @@ Return a single JSON object whose values are Markdown strings, with exactly thes
 async def create_job(pid: int, request: Request):
     p = get_project(pid)
     identity = get_identity(request)
+
+    if not (p.get("code") or "").strip():
+        raise HTTPException(400, "Source code is empty.")
+    if len(p["code"]) > rate_limit.config.max_input_chars:
+        raise HTTPException(400, f"Code exceeds maximum input size limit ({rate_limit.config.max_input_chars} chars).")
 
     rate_limit.check_global_limits()
     rate_limit.check_user_generation_limit(identity)
@@ -644,10 +726,31 @@ async def stream_job(jid: str, request: Request):
 def generate(pid: int, request: Request):
     p = get_project(pid)
     identity = get_identity(request)
+
+    if not (p.get("code") or "").strip():
+        raise HTTPException(400, "Source code is empty.")
+    if len(p["code"]) > rate_limit.config.max_input_chars:
+        raise HTTPException(400, f"Code exceeds maximum input size limit ({rate_limit.config.max_input_chars} chars).")
+
+    keys = resolve_keys_for_doc_type(p.get("doc_type"))
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    cache_key = rate_limit.compute_cache_key(p["code"], p.get("language", "Python"), p.get("doc_type", "Full documentation"), "all", model_name)
+    cached = rate_limit.default_storage.get_cached_docs(cache_key)
+    if cached and isinstance(cached, dict) and all(k in cached for k in keys):
+        final_docs = dict(p.get("docs") or {})
+        final_docs.update(cached)
+        for k in SECTIONS:
+            final_docs.setdefault(k, "_Not generated. Try regenerating this section._")
+        with db() as c:
+            c.execute("UPDATE projects SET docs=?,status='Documented',updated=CURRENT_TIMESTAMP WHERE id=?", (json.dumps(final_docs), pid))
+        res = get_project(pid)
+        res["cached"] = True
+        return res
+
     rate_limit.check_global_limits()
     rate_limit.check_user_generation_limit(identity)
-    keys = resolve_keys_for_doc_type(p.get("doc_type"))
     docs = run(p, keys)
+    rate_limit.default_storage.set_cached_docs(cache_key, docs, model_name)
     if identity and rate_limit.config.enabled:
         rate_limit.record_real_generation_quota(identity, is_regeneration=False)
     final_docs = dict(p.get("docs") or {})
@@ -664,9 +767,27 @@ def regenerate(pid: int, section: str, request: Request):
         raise HTTPException(400, "Unknown section.")
     p = get_project(pid)
     identity = get_identity(request)
+
+    if not (p.get("code") or "").strip():
+        raise HTTPException(400, "Source code is empty.")
+    if len(p["code"]) > rate_limit.config.max_input_chars:
+        raise HTTPException(400, f"Code exceeds maximum input size limit ({rate_limit.config.max_input_chars} chars).")
+
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    cache_key = rate_limit.compute_cache_key(p["code"], p.get("language", "Python"), p.get("doc_type", "Full documentation"), section, model_name)
+    cached = rate_limit.default_storage.get_cached_docs(cache_key)
+    if cached and isinstance(cached, dict) and section in cached:
+        p["docs"][section] = cached[section]
+        with db() as c:
+            c.execute("UPDATE projects SET docs=?,status='Documented',updated=CURRENT_TIMESTAMP WHERE id=?", (json.dumps(p["docs"]), pid))
+        res = get_project(pid)
+        res["cached"] = True
+        return res
+
     rate_limit.check_global_limits()
     rate_limit.check_user_regeneration_limit(identity)
     p["docs"][section] = run(p, [section])[section]
+    rate_limit.default_storage.set_cached_docs(cache_key, {section: p["docs"][section]}, model_name)
     if identity and rate_limit.config.enabled:
         rate_limit.record_real_generation_quota(identity, is_regeneration=True)
     with db() as c:
