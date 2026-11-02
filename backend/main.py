@@ -4,9 +4,11 @@ from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.exception_handlers import http_exception_handler
 from pydantic import BaseModel, Field
+import rate_limit
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT.parent / ".env")
@@ -64,6 +66,37 @@ STAGE_DEFINITIONS = [
 ]
 
 app = FastAPI(title="DocuForge AI")
+
+@app.middleware("http")
+async def rate_limit_identity_middleware(request: Request, call_next):
+    identity = rate_limit.get_client_identity(request)
+    request.state.identity = identity
+    response = await call_next(request)
+    rate_limit.attach_client_cookie(response, identity)
+    return response
+
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 429:
+        if isinstance(exc.detail, dict) and "error" in exc.detail:
+            return JSONResponse(status_code=429, content=exc.detail, headers=exc.headers or {})
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "rate_limited",
+                "message": str(exc.detail),
+                "scope": "user",
+                "retry_after_seconds": 60
+            },
+            headers={"Retry-After": "60"}
+        )
+    return await http_exception_handler(request, exc)
+
+def get_identity(request: Request) -> rate_limit.ClientIdentity:
+    if hasattr(request.state, "identity"):
+        return request.state.identity
+    return rate_limit.get_client_identity(request)
+
 
 def db():
     c = sqlite3.connect(DB)
