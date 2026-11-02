@@ -183,9 +183,9 @@ export async function renderDocumentation(container, params) {
                 <div class="df-sub" style="font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; margin-bottom: 10px; color: var(--text-tertiary);">
                   In-Section Outline
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto;">
+                <div class="df-doc-outline-list" style="display: flex; flex-direction: column; gap: 2px; max-height: 280px; overflow-y: auto;">
                   ${headingMatches.map(h => `
-                    <a href="#df-h-${h.slug}" class="df-sub df-doc-anchor" style="padding: 3px 6px; border-radius: var(--r-xs); font-size: 12px; margin-left: ${(h.level - 1) * 10}px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color var(--trans-fast);">
+                    <a href="#df-h-${h.slug}" class="df-sub df-doc-anchor" style="padding: 5px 8px; border-radius: var(--r-xs); font-size: 12px; line-height: 1.45; margin-left: ${(h.level - 1) * 10}px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; display: block; transition: color var(--trans-fast), background-color var(--trans-fast);">
                       ${escapeHtml(h.text)}
                     </a>
                   `).join('')}

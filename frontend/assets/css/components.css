@@ -762,6 +762,41 @@ textarea:focus:not(:focus-visible) {
   line-height: 1.5;
 }
 
+/* In-document Outline Navigation */
+.df-doc-outline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.df-doc-anchor {
+  display: block !important;
+  flex-shrink: 0 !important;
+  padding: 5px 8px !important;
+  border-radius: var(--r-xs);
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+  color: var(--text-secondary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background-color var(--trans-fast), color var(--trans-fast);
+}
+
+.df-doc-anchor:hover {
+  color: var(--accent) !important;
+  background-color: var(--bg-surface-hover);
+}
+
+.df-doc-anchor:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
 /* Results Workspace Responsive Tabs */
 .df-doc-mobile-tabs {
   display: none;
