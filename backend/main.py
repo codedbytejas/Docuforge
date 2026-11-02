@@ -164,11 +164,38 @@ async def notify_job_listeners(jid: str, data: dict):
         except Exception:
             pass
 
+def get_gemini_api_keys() -> list[str]:
+    """Retrieve deduplicated list of Gemini API keys from environment for automatic failover."""
+    load_dotenv(ROOT.parent / ".env", override=True)
+    keys = []
+
+    # 1. Comma / newline separated GEMINI_API_KEYS
+    multi_raw = os.getenv("GEMINI_API_KEYS", "")
+    if multi_raw:
+        for k in re.split(r'[,;\n]+', multi_raw):
+            k = k.strip()
+            if k and k not in keys:
+                keys.append(k)
+
+    # 2. Sequential indexed keys: GEMINI_API_KEY_1, GEMINI_API_KEY_2, ...
+    for idx in range(1, 11):
+        indexed = os.getenv(f"GEMINI_API_KEY_{idx}", "").strip()
+        if indexed and indexed not in keys:
+            keys.append(indexed)
+
+    # 3. Standard single key: GEMINI_API_KEY
+    single = os.getenv("GEMINI_API_KEY", "").strip()
+    if single and single not in keys:
+        keys.append(single)
+
+    return keys
+
 @app.get("/api/status")
 def status():
-    load_dotenv(ROOT.parent / ".env", override=True)
+    keys = get_gemini_api_keys()
     return {
-        "gemini_configured": bool(os.getenv("GEMINI_API_KEY")),
+        "gemini_configured": bool(keys),
+        "key_pool_size": len(keys),
         "model": os.getenv("GEMINI_MODEL", "gemini-3.5-flash"),
         "sections": list(SECTIONS),
         "supported_languages": SUPPORTED_LANGUAGES,
@@ -308,9 +335,8 @@ def normalize_section_key(k: str) -> str:
     return cleaned
 
 def gemini(prompt: str) -> str:
-    load_dotenv(ROOT.parent / ".env", override=True)
-    key = os.getenv("GEMINI_API_KEY")
-    if not key:
+    api_keys = get_gemini_api_keys()
+    if not api_keys:
         raise HTTPException(503, "GEMINI_API_KEY is not set. Copy .env.example to .env, add your key, restart the server.")
     from google import genai
     from google.genai import types
@@ -323,45 +349,66 @@ def gemini(prompt: str) -> str:
             candidates.append(fb)
 
     last_err = None
-    for model_name in candidates:
-        for retry_idx in range(3):
-            try:
-                # Note: google-genai HttpOptions.timeout is in milliseconds (120,000ms = 120s)
-                client_opts = types.HttpOptions(
-                    timeout=120000,
-                    client_args={"timeout": httpx.Timeout(120.0, connect=30.0, read=120.0, write=30.0)}
-                )
-                with genai.Client(api_key=key, http_options=client_opts) as client:
-                    cfg = types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2)
-                    r = client.models.generate_content(model=model_name, contents=prompt, config=cfg)
-                    if r.text and r.text.strip():
-                        return r.text.strip()
-            except Exception as e:
-                m = str(e)
-                last_err = m
-                if "API key" in m or "401" in m or "403" in m:
-                    raise HTTPException(502, "Gemini rejected the API key. Check GEMINI_API_KEY.")
-                if "429" in m or "RESOURCE_EXHAUSTED" in m:
-                    if retry_idx < 2:
-                        backoff = 1.0 * (2 ** retry_idx) + random.uniform(0.1, 0.4)
-                        time.sleep(backoff)
-                        continue
-                    break
-                if "503" in m or "404" in m or "closed" in m or "timeout" in m.lower():
-                    if retry_idx < 2:
-                        time.sleep(1.5 * (retry_idx + 1) + random.uniform(0.1, 0.3))
-                        continue
-                    break
-                break
+    exhausted_keys_count = 0
 
-    if "429" in (last_err or "") or "RESOURCE_EXHAUSTED" in (last_err or ""):
+    # Auto-failover across multiple API keys if configured
+    for key_idx, key in enumerate(api_keys):
+        anonymized_key = f"...{key[-4:]}" if len(key) >= 4 else f"key#{key_idx+1}"
+        key_exhausted_or_invalid = False
+
+        for model_name in candidates:
+            if key_exhausted_or_invalid:
+                break
+            for retry_idx in range(3):
+                try:
+                    # Note: google-genai HttpOptions.timeout is in milliseconds (120,000ms = 120s)
+                    client_opts = types.HttpOptions(
+                        timeout=120000,
+                        client_args={"timeout": httpx.Timeout(120.0, connect=30.0, read=120.0, write=30.0)}
+                    )
+                    with genai.Client(api_key=key, http_options=client_opts) as client:
+                        cfg = types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2)
+                        r = client.models.generate_content(model=model_name, contents=prompt, config=cfg)
+                        if r.text and r.text.strip():
+                            if key_idx > 0:
+                                print(f"[KEY_FAILOVER] Request succeeded using fallback API key #{key_idx + 1} ({anonymized_key})")
+                            return r.text.strip()
+                except Exception as e:
+                    m = str(e)
+                    last_err = m
+                    # 1. Invalid / rejected key -> switch to next fallback key immediately
+                    if "API key" in m or "401" in m or "403" in m:
+                        print(f"[KEY_FAILOVER] API key #{key_idx + 1} ({anonymized_key}) invalid or unauthorized. Switching to next fallback key...")
+                        key_exhausted_or_invalid = True
+                        break
+                    # 2. Quota / Rate limit (429 / RESOURCE_EXHAUSTED) -> backoff with jitter up to 2 times, then fail over
+                    if "429" in m or "RESOURCE_EXHAUSTED" in m or "quota" in m.lower():
+                        if retry_idx < 2:
+                            backoff = 1.0 * (2 ** retry_idx) + random.uniform(0.1, 0.4)
+                            time.sleep(backoff)
+                            continue
+                        print(f"[KEY_FAILOVER] API key #{key_idx + 1} ({anonymized_key}) exhausted quota after retries. Switching to next fallback key...")
+                        key_exhausted_or_invalid = True
+                        exhausted_keys_count += 1
+                        break
+                    # 3. Transient timeout or 503 error on this model -> retry once before trying next model
+                    if "503" in m or "404" in m or "closed" in m or "timeout" in m.lower():
+                        if retry_idx < 1:
+                            time.sleep(1.0 + random.uniform(0.1, 0.3))
+                            continue
+                        break
+                    break
+
+    if "429" in (last_err or "") or "RESOURCE_EXHAUSTED" in (last_err or "") or (exhausted_keys_count > 0 and exhausted_keys_count == len(api_keys)):
         rate_limit.log_rate_limit_event("global", "upstream_gemini", "gemini_generate", 30.0)
+        msg = f"All {len(api_keys)} configured Gemini API key(s) are temporarily at quota. Please retry in 30 seconds." if len(api_keys) > 1 else "Gemini AI capacity is temporarily reached. Please retry in 30 seconds."
         rate_limit.raise_rate_limited(
             "global",
-            "Gemini AI capacity is temporarily reached. Please retry in 30 seconds.",
+            msg,
             30.0
         )
-    raise HTTPException(502, "Gemini request failed: " + (last_err or "Empty response")[:200])
+    key_note = f" across {len(api_keys)} key(s)" if len(api_keys) > 1 else ""
+    raise HTTPException(502, f"Gemini request failed{key_note}: " + (last_err or "Empty response")[:200])
 
 def parse(text: str, keys):
     t = (text or "").strip()
@@ -591,9 +638,8 @@ async def process_job_task(job_id: str, project_id: int, identity: Optional[rate
         # Stage 2: dispatch
         update_stage("dispatch", "running")
         await notify_job_listeners(job_id, get_job_record(job_id))
-        load_dotenv(ROOT.parent / ".env", override=True)
-        key = os.getenv("GEMINI_API_KEY")
-        if not key or p.get("name") == "__test_missing_key__":
+        keys_pool = get_gemini_api_keys()
+        if not keys_pool or p.get("name") == "__test_missing_key__":
             raise ValueError("GEMINI_API_KEY is not set. Add your key in Settings or .env.")
         if p.get("name") == "__test_forced_failure__":
             raise RuntimeError("Gemini API error (503 Service Unavailable): Model overloaded. Please retry.")

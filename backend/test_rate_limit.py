@@ -305,6 +305,37 @@ class TestRateLimitingAndQuotaProtection(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(usage["rate_limiting_enabled"])
                 self.assertTrue(usage["service_available"])
 
+    async def test_11_api_key_failover_pool(self):
+        """11. Automatic failover: when Key 1 fails with 429/quota, Key 2 succeeds without error."""
+        from main import gemini
+
+        calls = []
+        def mock_client_factory(api_key, **kwargs):
+            mock = MagicMock()
+            mock.__enter__.return_value = mock
+            if api_key == "key_exhausted":
+                mock.models.generate_content.side_effect = RuntimeError("429 RESOURCE_EXHAUSTED: Quota exceeded")
+            elif api_key == "key_valid_fallback":
+                resp = MagicMock()
+                resp.text = '{"readme": "# Successful Fallback Doc"}'
+                mock.models.generate_content.return_value = resp
+            calls.append(api_key)
+            return mock
+
+        env_vars = {
+            "GEMINI_API_KEYS": "key_exhausted, key_valid_fallback",
+            "GEMINI_MODEL": "gemini-3.5-flash"
+        }
+
+        with patch("os.getenv", side_effect=lambda k, d=None: env_vars.get(k, d)), \
+             patch("google.genai.Client", side_effect=mock_client_factory), \
+             patch("time.sleep"):
+
+            result = gemini("Document this code")
+            self.assertIn("Successful Fallback Doc", result)
+            self.assertIn("key_exhausted", calls)
+            self.assertIn("key_valid_fallback", calls)
+
 
 if __name__ == "__main__":
     unittest.main()

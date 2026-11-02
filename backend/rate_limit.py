@@ -64,7 +64,7 @@ class RateLimitConfig:
         # Secret key for HMAC client cookie signing
         secret = os.getenv("RL_SECRET_KEY")
         if not secret:
-            secret = os.getenv("GEMINI_API_KEY", "docuforge-secure-client-salt-default-key")
+            secret = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEYS") or "docuforge-secure-client-salt-default-key"
         self.secret_key: bytes = secret.encode("utf-8")
 
 config = RateLimitConfig()

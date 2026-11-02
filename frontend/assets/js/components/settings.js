@@ -16,6 +16,7 @@ export async function renderSettings(container) {
   }
 
   const isConfigured = Boolean(state.status?.gemini_configured);
+  const keyPoolSize = state.status?.key_pool_size || (isConfigured ? 1 : 0);
   const activeModel = state.status?.model || 'gemini-3.5-flash';
   const rateLimits = state.status?.rate_limits;
 
@@ -32,22 +33,27 @@ export async function renderSettings(container) {
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
           <h2 class="df-title-md" style="margin: 0;">Gemini AI Integration</h2>
           <span class="df-badge ${isConfigured ? 'df-badge-documented' : 'df-badge-failed'}">
-            ${isConfigured ? `${icons.check(12)} Configured` : `${icons.alert(12)} Missing Key`}
+            ${isConfigured ? `${icons.check(12)} Configured (${keyPoolSize} Key${keyPoolSize > 1 ? 's' : ''})` : `${icons.alert(12)} Missing Key`}
           </span>
         </div>
 
         <div style="padding: 14px 16px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--r-md); margin-bottom: 18px;">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
             <div>
-              <b style="font-size: var(--fs-sm);">API Credential Status</b>
+              <b style="font-size: var(--fs-sm);">API Credential & Fallback Pool</b>
               <div class="df-sub" style="font-size: var(--fs-xs); margin-top: 2px;">
-                ${isConfigured ? 'API key is securely managed server-side in <code>.env</code>. Never exposed to browser.' : 'No API key detected in server environment.'}
+                ${isConfigured ? `${keyPoolSize} Gemini API Key${keyPoolSize > 1 ? 's' : ''} active in auto-failover pool. If a key runs out of quota, DocuForge seamlessly routes to the next key.` : 'No API key detected in server environment.'}
               </div>
             </div>
             <span class="df-mono df-sub" style="font-size: 11px; background: var(--bg-surface); padding: 4px 8px; border-radius: var(--r-xs); border: 1px solid var(--border-subtle);">
-              ${isConfigured ? 'SERVER-SIDE LOADED' : 'UNCONFIGURED'}
+              ${isConfigured ? `${keyPoolSize} KEY${keyPoolSize > 1 ? 'S' : ''} LOADED` : 'UNCONFIGURED'}
             </span>
           </div>
+          ${isConfigured ? `
+            <div class="df-sub" style="margin-top: 8px; font-size: 11.5px; color: var(--text-tertiary); border-top: 1px solid var(--border-subtle); padding-top: 8px;">
+              Auto-Failover: You can configure multiple keys in <code>.env</code> using <code>GEMINI_API_KEYS=key1,key2,key3</code> or <code>GEMINI_API_KEY_1</code>, <code>GEMINI_API_KEY_2</code>.
+            </div>
+          ` : ''}
         </div>
 
         <div class="df-field-group">
