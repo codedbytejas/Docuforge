@@ -168,8 +168,24 @@ def status():
         "model": os.getenv("GEMINI_MODEL", "gemini-3.5-flash"),
         "sections": list(SECTIONS),
         "supported_languages": SUPPORTED_LANGUAGES,
-        "stages": STAGE_DEFINITIONS
+        "stages": STAGE_DEFINITIONS,
+        "rate_limits": {
+            "enabled": rate_limit.config.enabled,
+            "generations_per_hour": rate_limit.config.generations_per_hour,
+            "generations_per_day": rate_limit.config.generations_per_day,
+            "regenerations_per_hour": rate_limit.config.regenerations_per_hour,
+            "max_concurrent_jobs": rate_limit.config.max_concurrent_jobs,
+            "max_input_chars": rate_limit.config.max_input_chars,
+            "uploads_per_minute": rate_limit.config.uploads_per_minute,
+            "global_requests_per_minute": rate_limit.config.global_requests_per_minute,
+            "global_daily_requests": rate_limit.config.global_daily_requests,
+        }
     }
+
+@app.get("/api/usage")
+def get_usage(request: Request):
+    identity = get_identity(request)
+    return rate_limit.get_usage_summary(identity)
 
 @app.get("/api/projects")
 def list_projects():
