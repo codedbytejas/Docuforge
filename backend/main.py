@@ -1,5 +1,5 @@
 """DocuForge AI backend: FastAPI + Gemini + SQLite + Real Job Progress. The API key lives only in the environment."""
-import asyncio, io, json, os, re, sqlite3, time, uuid, zipfile
+import asyncio, io, json, os, random, re, sqlite3, time, uuid, zipfile
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
@@ -280,23 +280,39 @@ def gemini(prompt: str) -> str:
 
     last_err = None
     for model_name in candidates:
-        try:
-            with genai.Client(api_key=key) as client:
-                cfg = types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2)
-                r = client.models.generate_content(model=model_name, contents=prompt, config=cfg)
-                if r.text and r.text.strip():
-                    return r.text.strip()
-        except Exception as e:
-            m = str(e)
-            last_err = m
-            if "API key" in m or "401" in m or "403" in m:
-                raise HTTPException(502, "Gemini rejected the API key. Check GEMINI_API_KEY.")
-            if "429" in m or "RESOURCE_EXHAUSTED" in m or "503" in m or "404" in m or "closed" in m:
-                continue
-            break
+        for retry_idx in range(3):
+            try:
+                client_opts = types.HttpOptions(timeout=60.0)
+                with genai.Client(api_key=key, http_options=client_opts) as client:
+                    cfg = types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2)
+                    r = client.models.generate_content(model=model_name, contents=prompt, config=cfg)
+                    if r.text and r.text.strip():
+                        return r.text.strip()
+            except Exception as e:
+                m = str(e)
+                last_err = m
+                if "API key" in m or "401" in m or "403" in m:
+                    raise HTTPException(502, "Gemini rejected the API key. Check GEMINI_API_KEY.")
+                if "429" in m or "RESOURCE_EXHAUSTED" in m:
+                    if retry_idx < 2:
+                        backoff = 1.0 * (2 ** retry_idx) + random.uniform(0.1, 0.4)
+                        time.sleep(backoff)
+                        continue
+                    break
+                if "503" in m or "404" in m or "closed" in m or "timeout" in m.lower():
+                    if retry_idx < 1:
+                        time.sleep(0.5 + random.uniform(0.1, 0.3))
+                        continue
+                    break
+                break
 
     if "429" in (last_err or "") or "RESOURCE_EXHAUSTED" in (last_err or ""):
-        raise HTTPException(429, "Gemini rate limit reached. Wait a moment and retry.")
+        rate_limit.log_rate_limit_event("global", "upstream_gemini", "gemini_generate", 30.0)
+        rate_limit.raise_rate_limited(
+            "global",
+            "Gemini AI capacity is temporarily reached. Please retry in 30 seconds.",
+            30.0
+        )
     raise HTTPException(502, "Gemini request failed: " + (last_err or "Empty response")[:200])
 
 def parse(text: str, keys):
@@ -379,7 +395,7 @@ Return a single JSON object whose values are Markdown strings, with exactly thes
 </source_code>"""
     return parse(gemini(prompt), keys)
 
-async def process_job_task(job_id: str, project_id: int):
+async def process_job_task(job_id: str, project_id: int, identity: Optional[rate_limit.ClientIdentity] = None):
     stages_state = []
     for s in STAGE_DEFINITIONS:
         stages_state.append({
@@ -483,6 +499,9 @@ Return a single JSON object whose values are Markdown strings, with exactly thes
         update_stage("parsing", "completed")
         await notify_job_listeners(job_id, get_job_record(job_id))
 
+        if identity and rate_limit.config.enabled:
+            rate_limit.record_real_generation_quota(identity, is_regeneration=False)
+
         # Stage 5: persisting
         update_stage("persisting", "running")
         await notify_job_listeners(job_id, get_job_record(job_id))
@@ -554,7 +573,7 @@ async def create_job(pid: int, request: Request):
             "INSERT INTO jobs(id, project_id, status, current_stage, stages, error) VALUES(?,?,?,?,?,?)",
             (jid, pid, "queued", "intake", json.dumps(initial_stages), "")
         )
-    asyncio.create_task(process_job_task(jid, pid))
+    asyncio.create_task(process_job_task(jid, pid, identity))
     return get_job_record(jid)
 
 @app.get("/api/jobs/{jid}")
@@ -629,6 +648,8 @@ def generate(pid: int, request: Request):
     rate_limit.check_user_generation_limit(identity)
     keys = resolve_keys_for_doc_type(p.get("doc_type"))
     docs = run(p, keys)
+    if identity and rate_limit.config.enabled:
+        rate_limit.record_real_generation_quota(identity, is_regeneration=False)
     final_docs = dict(p.get("docs") or {})
     final_docs.update(docs)
     for k in SECTIONS:
@@ -646,6 +667,8 @@ def regenerate(pid: int, section: str, request: Request):
     rate_limit.check_global_limits()
     rate_limit.check_user_regeneration_limit(identity)
     p["docs"][section] = run(p, [section])[section]
+    if identity and rate_limit.config.enabled:
+        rate_limit.record_real_generation_quota(identity, is_regeneration=True)
     with db() as c:
         c.execute("UPDATE projects SET docs=?,status='Documented',updated=CURRENT_TIMESTAMP WHERE id=?", (json.dumps(p["docs"]), pid))
     return get_project(pid)
