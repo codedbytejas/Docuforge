@@ -318,7 +318,8 @@ class SQLiteRateLimitStorage(RateLimitStorage):
                     if count > max_count:
                         max_count = count
 
-                    if count + cost > limit:
+                    is_blocked = (count >= limit) if cost == 0 else (count + cost > limit)
+                    if is_blocked:
                         retry_after = 1.0
                         if oldest is not None:
                             retry_after = max(1.0, math.ceil((oldest + window_seconds) - curr_time))
@@ -328,12 +329,13 @@ class SQLiteRateLimitStorage(RateLimitStorage):
                 if max_retry_after > 0.0:
                     return False, max_count, max_retry_after
 
-                # All keys are within limit; atomically record event for all keys
-                for k in keys:
-                    conn.execute(
-                        "INSERT INTO rate_limit_events(key, timestamp, cost) VALUES (?, ?, ?)",
-                        (k, curr_time, cost)
-                    )
+                # All keys are within limit; atomically record event for all keys if cost > 0
+                if cost > 0:
+                    for k in keys:
+                        conn.execute(
+                            "INSERT INTO rate_limit_events(key, timestamp, cost) VALUES (?, ?, ?)",
+                            (k, curr_time, cost)
+                        )
                 return True, max_count + cost, 0.0
 
     def get_remaining(
@@ -496,15 +498,17 @@ class InMemoryFallbackStorage(RateLimitStorage):
                 self._events[k] = ts_list
                 if len(ts_list) > max_c:
                     max_c = len(ts_list)
-                if len(ts_list) + cost > limit:
+                is_blocked = (len(ts_list) >= limit) if cost == 0 else (len(ts_list) + cost > limit)
+                if is_blocked:
                     oldest = min(ts_list) if ts_list else curr
                     rem = max(1.0, math.ceil((oldest + window_seconds) - curr))
                     if rem > retry:
                         retry = rem
             if retry > 0.0:
                 return False, max_c, retry
-            for k in keys:
-                self._events.setdefault(k, []).extend([curr] * cost)
+            if cost > 0:
+                for k in keys:
+                    self._events.setdefault(k, []).extend([curr] * cost)
             return True, max_c + cost, 0.0
 
     def get_remaining(self, keys: List[str], limit: int, window_seconds: float, now: Optional[float] = None) -> Tuple[int, float]:
@@ -632,7 +636,7 @@ def check_global_limits(now: Optional[float] = None):
         )
     )
     if not allowed_min:
-        msg = f"The service is currently experiencing high demand. Please try again at {format_retry_time(retry_min)}."
+        msg = f"The service is currently busy under high demand. Please try again at {format_retry_time(retry_min)}."
         log_rate_limit_event("global", "global", "gemini_dispatch", retry_min)
         raise_rate_limited("global", msg, retry_min)
 
