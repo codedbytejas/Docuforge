@@ -66,3 +66,4 @@ for i, p in enumerate(user_prompts, start=1):
 output_path = Path("/Users/tejaschavan1907/Downloads/docuforge/prompts.md")
 output_path.write_text("\n".join(lines), encoding="utf-8")
 print(f"prompts.md generated successfully with {len(user_prompts)} prompts ({output_path.stat().st_size} bytes).")
+
