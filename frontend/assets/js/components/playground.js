@@ -432,8 +432,7 @@ export async function renderPlayground(container) {
       } else if (rateLimitSecondsLeft <= 0) {
         checkValid();
       }
-    } catch (e) {
-      console.error("loadQuotaUsage error:", e);
+    } catch {
       if (quotaBadge) quotaBadge.textContent = 'Quota monitoring active';
     }
   }

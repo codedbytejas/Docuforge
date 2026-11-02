@@ -1055,3 +1055,4 @@ async def generate_pdf():
     print(f"PDF generated successfully at {pdf_path} ({pdf_path.stat().st_size} bytes)")
 
 asyncio.run(generate_pdf())
+

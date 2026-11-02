@@ -115,15 +115,12 @@ Open **http://127.0.0.1:8000** in your browser.
 
 ## Automated Verification Tests
 
-The test suite runs with Playwright across headless Chromium, validating the complete end-to-end user journey:
+The test suite validates rate limiting, concurrency controls, cache preservation, and complete browser user journeys:
 
 ```bash
-# Run rate limiting and quota protection test suite (10 comprehensive tests)
+# Run rate limiting and quota protection test suite (10 comprehensive unit/integration tests)
 PYTHONPATH=backend .venv/bin/python3 backend/test_rate_limit.py
 
-# Run comprehensive demo-ready E2E suite (56 tests covering intro, copy, upload, generation, persistence, responsive sweep)
-.venv/bin/python scratch/verify_demo_ready.py
-
-# Run accessibility & landmarks audit across all 5 routes
-.venv/bin/python scratch/audit_accessibility.py
+# Run browser verification suite (validating quota badge, reset countdown, and settings card)
+.venv/bin/python scratch/verify_rate_limit_browser.py
 ```

@@ -574,19 +574,7 @@ Return a single JSON object whose values are Markdown strings, with exactly thes
         # Stage 4: parsing
         update_stage("parsing", "running")
         await notify_job_listeners(job_id, get_job_record(job_id))
-        try:
-            docs = parse(raw_output, keys)
-        except Exception as first_parse_err:
-            try:
-                update_stage("inference", "running")
-                await notify_job_listeners(job_id, get_job_record(job_id))
-                raw_output = await asyncio.to_thread(gemini, prompt)
-                update_stage("inference", "completed")
-                update_stage("parsing", "running")
-                await notify_job_listeners(job_id, get_job_record(job_id))
-                docs = parse(raw_output, keys)
-            except Exception:
-                raise first_parse_err
+        docs = parse(raw_output, keys)
         update_stage("parsing", "completed")
         await notify_job_listeners(job_id, get_job_record(job_id))
 

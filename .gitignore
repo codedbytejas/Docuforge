@@ -2,3 +2,7 @@
 *.db
 __pycache__/
 .venv/
+*.pdf
+scratch/pdf_pages/
+scratch/documentation_report.html
+scratch/.env
