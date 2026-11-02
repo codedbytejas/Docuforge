@@ -399,3 +399,73 @@ include all the prompts i gave in prompts.md
 ```
 
 ---
+
+## Prompt 23
+
+**Timestamp:** `2026-11-02T04:48:28Z`
+
+```text
+make report documentation format like this for this project in pdf
+```
+
+---
+
+## Prompt 24
+
+**Timestamp:** `2026-11-02T05:15:10Z`
+
+```text
+remove the unwanted and uneccesary code from the files
+```
+
+---
+
+## Prompt 25
+
+**Timestamp:** `2026-11-02T05:22:40Z`
+
+```text
+now want to deploy on render
+```
+
+---
+
+## Prompt 26
+
+**Timestamp:** `2026-11-02T05:25:12Z`
+
+```text
+freee version
+```
+
+---
+
+## Prompt 27
+
+**Timestamp:** `2026-11-02T05:55:51Z`
+
+```text
+this is showing in other web fix it😭
+```
+
+---
+
+## Prompt 28
+
+**Timestamp:** `2026-11-02T08:56:42Z`
+
+```text
+fix this part properly!
+```
+
+---
+
+## Prompt 29
+
+**Timestamp:** `2026-11-02T09:09:10Z`
+
+```text
+if gemini api keys fails also add fallback in that like i will add 2-3 keys more!
+```
+
+---
